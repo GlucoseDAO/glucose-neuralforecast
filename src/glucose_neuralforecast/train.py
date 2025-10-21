@@ -22,6 +22,16 @@ from glucose_neuralforecast.models import (
     get_models_by_category,
     get_models_supporting_exogenous
 )
+
+
+def get_models_requiring_n_series() -> set:
+    """
+    Get the set of model names that require n_series parameter (multivariate models).
+    
+    Returns:
+        Set of model names that need n_series
+    """
+    return {'MLPMultivariate', 'TimeXer', 'TSMixerx'}
 from glucose_neuralforecast.config import (
     load_config, 
     save_default_config, 
@@ -60,9 +70,13 @@ def list_models() -> None:
     typer.echo("  MLP-based: NHITS, NBEATSx, MLP, MLPMultivariate")
     typer.echo("  RNN-based: LSTM, GRU, RNN, DilatedRNN")
     typer.echo("  CNN-based: TCN, BiTCN")
-    typer.echo("  Specialized: TFT, DeepAR, DeepNPTS, TiDE, HINT")
-    typer.echo("  Recent: TimesNet, TimeXer, TSMixerx")
+    typer.echo("  Specialized: TFT, DeepNPTS, TiDE")
+    typer.echo("  Recent: TimeXer, TSMixerx")
     typer.echo("  KAN: KAN")
+    typer.echo("\nExcluded models (require special handling or don't support exogenous):")
+    typer.echo("  - HINT: Hierarchical model with different initialization")
+    typer.echo("  - DeepAR: Does not support hist_exog_list despite having the parameter")
+    typer.echo("  - TimesNet: Does not support hist_exog_list despite having the parameter")
     # Count total available models
     from glucose_neuralforecast.models import get_available_models
     available_models_dict = get_available_models(horizon=12, input_size=48, max_steps=5000)
@@ -230,7 +244,7 @@ def train(
         None,
         "--models",
         "-m",
-        help="Comma-separated list of models to train (e.g., 'NBEATS,NHITS,LSTM'). If not provided, trains all 16 models that support exogenous variables"
+        help="Comma-separated list of models to train (e.g., 'NBEATS,NHITS,LSTM'). If not provided, trains 16 models that support exogenous variables (excludes HINT, DeepAR, TimesNet)"
     ),
     n_windows: int = typer.Option(
         3,
@@ -464,8 +478,33 @@ def train(
                     if model_class is None:
                         raise ValueError(f"Model class not found for {model_name}")
                     
-                    # Create model with hist_exog_list if using exogenous variables
-                    if hist_exog_list:
+                    # Check if model requires n_series parameter
+                    models_needing_n_series = get_models_requiring_n_series()
+                    
+                    # Create model with appropriate parameters
+                    if model_name in models_needing_n_series:
+                        # Multivariate models need n_series parameter
+                        n_series = df['unique_id'].n_unique() if hasattr(df, 'n_unique') else df['unique_id'].nunique()
+                        action.log(message_type="multivariate_model", n_series=n_series)
+                        typer.echo(f"  Multivariate model detected, n_series={n_series}")
+                        
+                        if hist_exog_list:
+                            model = model_class(
+                                input_size=input_size,
+                                h=horizon,
+                                n_series=n_series,
+                                max_steps=max_steps,
+                                hist_exog_list=hist_exog_list
+                            )
+                        else:
+                            model = model_class(
+                                input_size=input_size,
+                                h=horizon,
+                                n_series=n_series,
+                                max_steps=max_steps
+                            )
+                    elif hist_exog_list:
+                        # Standard models with exogenous variables
                         model = model_class(
                             input_size=input_size,
                             h=horizon,
@@ -473,6 +512,7 @@ def train(
                             hist_exog_list=hist_exog_list
                         )
                     else:
+                        # Standard models without exogenous variables
                         model = model_class(
                             input_size=input_size,
                             h=horizon,

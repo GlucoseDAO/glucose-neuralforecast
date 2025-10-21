@@ -39,51 +39,43 @@ def plot_predictions_plotly(
     plots_dir.mkdir(parents=True, exist_ok=True)
     
     with start_action(action_type="plot_predictions_plotly", model=model_name) as action:
-        try:
-            # Convert to pandas if needed
-            df_pandas = df.to_pandas() if isinstance(df, pl.DataFrame) else df
-            
-            # Get unique sequences
-            unique_ids = cv_df['unique_id'].unique()[:max_sequences]
-            action.log(message_type="plotting_sequences", count=len(unique_ids))
-            
-            for seq_id in unique_ids:
-                try:
-                    # Filter data for this sequence
-                    df_seq = df_pandas[df_pandas['unique_id'] == seq_id].copy()
-                    cv_seq = cv_df[cv_df['unique_id'] == seq_id].copy()
-                    
-                    if len(cv_seq) == 0:
-                        continue
-                    
-                    # Create the plot
-                    fig = create_timeseries_plot(
-                        df_seq=df_seq,
-                        cv_seq=cv_seq,
-                        model_name=model_name,
-                        seq_id=seq_id,
-                        show_all_ticks=show_all_ticks,
-                        tickangle=tickangle,
-                        height=height,
-                        width=width,
-                    )
-                    
-                    # Save as interactive HTML
-                    html_file = plots_dir / f'sequence_{seq_id}.html'
-                    fig.write_html(str(html_file))
-                    action.log(message_type="plot_saved", sequence=seq_id, file=str(html_file), format="html")
-                    
-                    # Also save as static PNG using kaleido
-                    png_file = plots_dir / f'sequence_{seq_id}.png'
-                    fig.write_image(str(png_file), width=width, height=height)
-                    action.log(message_type="plot_saved", sequence=seq_id, file=str(png_file), format="png")
-                    
-                except Exception as e:
-                    action.log(message_type="plot_warning", sequence=seq_id, error=str(e))
+        # Convert to pandas if needed
+        df_pandas = df.to_pandas() if isinstance(df, pl.DataFrame) else df
+        
+        # Get unique sequences
+        unique_ids = cv_df['unique_id'].unique()[:max_sequences]
+        action.log(message_type="plotting_sequences", count=len(unique_ids))
+        
+        for seq_id in unique_ids:
+            with start_action(action_type="plot_sequence", sequence=seq_id):
+                # Filter data for this sequence
+                df_seq = df_pandas[df_pandas['unique_id'] == seq_id].copy()
+                cv_seq = cv_df[cv_df['unique_id'] == seq_id].copy()
+                
+                if len(cv_seq) == 0:
                     continue
-                    
-        except Exception as e:
-            action.log(message_type="plotting_error", error=str(e))
+                
+                # Create the plot
+                fig = create_timeseries_plot(
+                    df_seq=df_seq,
+                    cv_seq=cv_seq,
+                    model_name=model_name,
+                    seq_id=seq_id,
+                    show_all_ticks=show_all_ticks,
+                    tickangle=tickangle,
+                    height=height,
+                    width=width,
+                )
+                
+                # Save as interactive HTML
+                html_file = plots_dir / f'sequence_{seq_id}.html'
+                fig.write_html(str(html_file))
+                action.log(message_type="html_saved", sequence=seq_id, file=str(html_file))
+                
+                # Also save as static PNG using kaleido
+                png_file = plots_dir / f'sequence_{seq_id}.png'
+                fig.write_image(str(png_file), width=width, height=height)
+                action.log(message_type="png_saved", sequence=seq_id, file=str(png_file))
 
 
 def create_timeseries_plot(
@@ -204,60 +196,61 @@ def plot_comparison_plotly(
     tickangle: int = -90,
     height: int = 800,
     width: int = 1600,
-) -> None:
+) -> bool:
     """
     Create a comparison plot of multiple models for a single sequence using Plotly.
     
     Args:
         df: Original data (polars)
         predictions: Dict mapping model names to their prediction DataFrames
-        output_path: Directory to save plots
+        output_path: Base directory for plots (e.g., /path/to/run/)
         sequence_id: ID of the sequence to plot
         models: List of model names to include (None = all)
         show_all_ticks: Whether to show all time point ticks on x-axis
         tickangle: Angle for tick labels
         height: Plot height in pixels
         width: Plot width in pixels
+        
+    Returns:
+        bool: True if both files were saved successfully
     """
-    plots_dir = output_path / 'plots' / 'comparison'
+    plots_dir = output_path / 'comparison'
     plots_dir.mkdir(parents=True, exist_ok=True)
     
-    with start_action(action_type="plot_comparison_plotly", sequence=sequence_id) as action:
-        try:
-            # Convert to pandas if needed
-            df_pandas = df.to_pandas() if isinstance(df, pl.DataFrame) else df
-            df_seq = df_pandas[df_pandas['unique_id'] == sequence_id].copy()
-            
-            if len(df_seq) == 0:
-                action.log(message_type="sequence_not_found", sequence=sequence_id)
-                return
-            
-            # Filter models if specified
-            if models is not None:
-                predictions = {k: v for k, v in predictions.items() if k in models}
-            
-            fig = create_comparison_plot(
-                df_seq=df_seq,
-                predictions=predictions,
-                sequence_id=sequence_id,
-                show_all_ticks=show_all_ticks,
-                tickangle=tickangle,
-                height=height,
-                width=width,
-            )
-            
-            # Save as interactive HTML
-            html_file = plots_dir / f'comparison_{sequence_id}.html'
-            fig.write_html(str(html_file))
-            action.log(message_type="comparison_saved", sequence=sequence_id, file=str(html_file), format="html")
-            
-            # Save as static PNG
-            png_file = plots_dir / f'comparison_{sequence_id}.png'
-            fig.write_image(str(png_file), width=width, height=height)
-            action.log(message_type="comparison_saved", sequence=sequence_id, file=str(png_file), format="png")
-            
-        except Exception as e:
-            action.log(message_type="comparison_error", sequence=sequence_id, error=str(e))
+    # Convert to pandas if needed
+    df_pandas = df.to_pandas() if isinstance(df, pl.DataFrame) else df
+    df_seq = df_pandas[df_pandas['unique_id'] == sequence_id].copy()
+    
+    if len(df_seq) == 0:
+        return False
+    
+    # Filter models if specified
+    if models is not None:
+        predictions = {k: v for k, v in predictions.items() if k in models}
+    
+    fig = create_comparison_plot(
+        df_seq=df_seq,
+        predictions=predictions,
+        sequence_id=sequence_id,
+        show_all_ticks=show_all_ticks,
+        tickangle=tickangle,
+        height=height,
+        width=width,
+    )
+    
+    # Save as interactive HTML
+    html_file = plots_dir / f'comparison_{sequence_id}.html'
+    fig.write_html(str(html_file))
+    
+    # Save as static PNG  
+    png_file = plots_dir / f'comparison_{sequence_id}.png'
+    fig.write_image(str(png_file), width=width, height=height)
+    
+    # Verify files were actually created before returning success
+    html_exists = (plots_dir / f'comparison_{sequence_id}.html').exists()
+    png_exists = (plots_dir / f'comparison_{sequence_id}.png').exists()
+    
+    return html_exists and png_exists
 
 
 def create_comparison_plot(
@@ -401,82 +394,79 @@ def create_interactive_dashboard(
     plots_dir.mkdir(parents=True, exist_ok=True)
     
     with start_action(action_type="create_interactive_dashboard") as action:
-        try:
-            df_pandas = df.to_pandas() if isinstance(df, pl.DataFrame) else df
+        df_pandas = df.to_pandas() if isinstance(df, pl.DataFrame) else df
+        
+        # Select sequences
+        if sequence_ids is None:
+            all_ids = df_pandas['unique_id'].unique()
+            import random
+            sequence_ids = list(all_ids[:max_sequences])
+        
+        # Create subplots - one row per sequence
+        n_sequences = len(sequence_ids)
+        fig = make_subplots(
+            rows=n_sequences,
+            cols=1,
+            subplot_titles=[f'Sequence {sid}' for sid in sequence_ids],
+            vertical_spacing=0.1,
+        )
+        
+        colors = ['#2E86AB', '#F24236', '#F6AE2D', '#55A630', '#9D4EDD']
+        
+        for row_idx, seq_id in enumerate(sequence_ids, start=1):
+            df_seq = df_pandas[df_pandas['unique_id'] == seq_id]
             
-            # Select sequences
-            if sequence_ids is None:
-                all_ids = df_pandas['unique_id'].unique()
-                import random
-                sequence_ids = list(all_ids[:max_sequences])
-            
-            # Create subplots - one row per sequence
-            n_sequences = len(sequence_ids)
-            fig = make_subplots(
-                rows=n_sequences,
-                cols=1,
-                subplot_titles=[f'Sequence {sid}' for sid in sequence_ids],
-                vertical_spacing=0.1,
+            # Add actual trace
+            fig.add_trace(
+                go.Scatter(
+                    x=df_seq['ds'],
+                    y=df_seq['y'],
+                    mode='lines+markers',
+                    name=f'Actual ({seq_id})',
+                    line=dict(color='black', width=2),
+                    marker=dict(size=4),
+                    showlegend=(row_idx == 1),
+                ),
+                row=row_idx, col=1
             )
             
-            colors = ['#2E86AB', '#F24236', '#F6AE2D', '#55A630', '#9D4EDD']
-            
-            for row_idx, seq_id in enumerate(sequence_ids, start=1):
-                df_seq = df_pandas[df_pandas['unique_id'] == seq_id]
+            # Add predictions for each model
+            for model_idx, (model_name, pred_df) in enumerate(predictions.items()):
+                pred_seq = pred_df[pred_df['unique_id'] == seq_id]
                 
-                # Add actual trace
-                fig.add_trace(
-                    go.Scatter(
-                        x=df_seq['ds'],
-                        y=df_seq['y'],
-                        mode='lines+markers',
-                        name=f'Actual ({seq_id})',
-                        line=dict(color='black', width=2),
-                        marker=dict(size=4),
-                        showlegend=(row_idx == 1),
-                    ),
-                    row=row_idx, col=1
-                )
-                
-                # Add predictions for each model
-                for model_idx, (model_name, pred_df) in enumerate(predictions.items()):
-                    pred_seq = pred_df[pred_df['unique_id'] == seq_id]
-                    
-                    if len(pred_seq) > 0 and model_name in pred_seq.columns:
-                        fig.add_trace(
-                            go.Scatter(
-                                x=pred_seq['ds'],
-                                y=pred_seq[model_name],
-                                mode='lines+markers',
-                                name=f'{model_name}',
-                                line=dict(color=colors[model_idx % len(colors)], width=2, dash='dash'),
-                                marker=dict(size=3),
-                                showlegend=(row_idx == 1),
-                            ),
-                            row=row_idx, col=1
-                        )
-            
-            # Update layout
-            fig.update_layout(
-                height=300 * n_sequences,
-                width=1600,
-                title_text='Multi-Sequence Dashboard',
-                showlegend=True,
-                hovermode='x unified',
-                plot_bgcolor='white',
-                paper_bgcolor='white',
-            )
-            
-            # Update all x-axes to show vertical labels
-            for i in range(1, n_sequences + 1):
-                fig.update_xaxes(tickangle=-90, row=i, col=1)
-                fig.update_yaxes(showgrid=True, gridcolor='rgba(128, 128, 128, 0.2)', row=i, col=1)
-            
-            # Save dashboard
-            html_file = plots_dir / 'dashboard.html'
-            fig.write_html(str(html_file))
-            action.log(message_type="dashboard_saved", file=str(html_file), sequences=len(sequence_ids))
-            
-        except Exception as e:
-            action.log(message_type="dashboard_error", error=str(e))
+                if len(pred_seq) > 0 and model_name in pred_seq.columns:
+                    fig.add_trace(
+                        go.Scatter(
+                            x=pred_seq['ds'],
+                            y=pred_seq[model_name],
+                            mode='lines+markers',
+                            name=f'{model_name}',
+                            line=dict(color=colors[model_idx % len(colors)], width=2, dash='dash'),
+                            marker=dict(size=3),
+                            showlegend=(row_idx == 1),
+                        ),
+                        row=row_idx, col=1
+                    )
+        
+        # Update layout
+        fig.update_layout(
+            height=300 * n_sequences,
+            width=1600,
+            title_text='Multi-Sequence Dashboard',
+            showlegend=True,
+            hovermode='x unified',
+            plot_bgcolor='white',
+            paper_bgcolor='white',
+        )
+        
+        # Update all x-axes to show vertical labels
+        for i in range(1, n_sequences + 1):
+            fig.update_xaxes(tickangle=-90, row=i, col=1)
+            fig.update_yaxes(showgrid=True, gridcolor='rgba(128, 128, 128, 0.2)', row=i, col=1)
+        
+        # Save dashboard
+        html_file = plots_dir / 'dashboard.html'
+        fig.write_html(str(html_file))
+        action.log(message_type="dashboard_saved", file=str(html_file), sequences=len(sequence_ids))
+
 

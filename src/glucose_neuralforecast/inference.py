@@ -9,6 +9,7 @@ import polars as pl
 import pandas as pd
 import typer
 from eliot import start_action
+from pycomfort.logging import to_nice_stdout
 from neuralforecast import NeuralForecast
 
 from glucose_neuralforecast.utils import resolve_base_folder
@@ -132,6 +133,69 @@ def cherry_pick_sequence(
         return selected_id
 
 
+def get_best_models_from_summary(
+    metrics_summary_path: Path,
+    top_n: int = 6,
+    metric: str = 'mae'
+) -> List[str]:
+    """
+    Get the best models based on metrics summary.
+    
+    Args:
+        metrics_summary_path: Path to metrics_summary.csv file
+        top_n: Number of best models to select
+        metric: Metric to use for selection (default: 'mae', lower is better)
+        
+    Returns:
+        List[str]: List of best model names sorted by performance
+    """
+    with start_action(action_type="get_best_models_from_summary", top_n=top_n, metric=metric) as action:
+        if not metrics_summary_path.exists():
+            action.log(message_type="metrics_summary_not_found", path=str(metrics_summary_path))
+            return []
+        
+        summary = pl.read_csv(metrics_summary_path)
+        
+        # Filter to the specified metric
+        metric_row = summary.filter(pl.col('metric') == metric)
+        
+        if len(metric_row) == 0:
+            action.log(message_type="metric_not_found", metric=metric)
+            return []
+        
+        # Get all columns with '_mean' suffix (these are the average values for each model)
+        mean_cols = [col for col in metric_row.columns if col.endswith('_mean')]
+        
+        if len(mean_cols) == 0:
+            action.log(message_type="no_mean_columns_found")
+            return []
+        
+        # Convert to pandas for easier manipulation
+        metric_df = metric_row.to_pandas()
+        
+        # Extract model names and their mean values
+        model_scores = []
+        for col in mean_cols:
+            model_name = col.replace('_mean', '')
+            score = metric_df[col].iloc[0]
+            if pd.notna(score):
+                model_scores.append((model_name, float(score)))
+        
+        # Sort by score (ascending for MAE - lower is better)
+        model_scores.sort(key=lambda x: x[1])
+        
+        # Take top N models
+        best_models = [name for name, score in model_scores[:top_n]]
+        
+        action.log(
+            message_type="best_models_selected",
+            models=best_models,
+            scores={name: score for name, score in model_scores[:top_n]}
+        )
+        
+        return best_models
+
+
 def run_inference(
     data_df: pl.DataFrame,
     models_to_use: List[str],
@@ -188,13 +252,13 @@ def plot_model_comparison(
     output_path: Path,
     filename: str = "comparison.png",
     metrics_path: Optional[Path] = None,
-    mae_threshold: float = 40.0,
-    top_models: Optional[int] = 5,
+    mae_threshold: Optional[float] = None,
+    top_models: Optional[int] = None,
     use_plotly: bool = True
 ) -> bool:
     """
     Plot comparison of multiple model predictions for a specific sequence.
-    Filters models by MAE threshold and selects top N models by MAE.
+    Optionally filters models by MAE threshold and selects top N models by MAE.
     
     Args:
         original_df: Original data with actual values (pandas format)
@@ -202,205 +266,227 @@ def plot_model_comparison(
         unique_id: The unique_id of the sequence to plot
         output_path: Directory to save the plot
         filename: Name of the output file
-        metrics_path: Path to metrics CSV file for filtering models by MAE
-        mae_threshold: Maximum MAE threshold to include models (default: 40.0)
-        top_models: Number of best models to show (default: 5, None for all)
+        metrics_path: Path to metrics CSV file for filtering models by MAE (optional)
+        mae_threshold: Maximum MAE threshold to include models (None to disable filtering)
+        top_models: Number of best models to show (None for all)
         use_plotly: Use plotly for interactive plots (default: True)
         
     Returns:
         bool: True if plot was successfully saved, False otherwise
     """
     with start_action(action_type="plot_model_comparison", unique_id=unique_id) as action:
-        try:
-            # Convert unique_id to int for comparison
-            unique_id_int = int(unique_id)
+        # Convert unique_id to int for comparison
+        unique_id_int = int(unique_id)
+        
+        # Filter original data for this sequence
+        df_seq = original_df[original_df['unique_id'] == unique_id_int]
+        
+        if len(df_seq) == 0:
+            action.log(message_type="no_data_for_sequence", unique_id=unique_id)
+            return False
+        
+        # Combine all predictions for this sequence
+        model_names = list(predictions.keys())
+        if len(model_names) == 0:
+            action.log(message_type="no_predictions")
+            return False
+        
+        # Filter models by MAE threshold and select top N models (only if metrics_path is provided)
+        if metrics_path and metrics_path.exists() and (mae_threshold is not None or top_models is not None):
+            metrics_df = pl.read_csv(metrics_path)
+            mae_metrics = metrics_df.filter(pl.col('metric') == 'mae')
             
-            # Filter original data for this sequence
-            df_seq = original_df[original_df['unique_id'] == unique_id_int]
+            # Get MAE for this sequence
+            seq_metrics = mae_metrics.filter(pl.col('unique_id') == unique_id_int)
             
-            if len(df_seq) == 0:
-                action.log(message_type="no_data_for_sequence", unique_id=unique_id)
-                return False
-            
-            # Combine all predictions for this sequence
-            model_names = list(predictions.keys())
-            if len(model_names) == 0:
-                action.log(message_type="no_predictions")
-                return False
-            
-            # Filter models by MAE threshold and select top N models
-            if metrics_path and metrics_path.exists():
-                metrics_df = pl.read_csv(metrics_path)
-                mae_metrics = metrics_df.filter(pl.col('metric') == 'mae')
+            if len(seq_metrics) > 0:
+                seq_metrics_row = seq_metrics.row(0)
+                seq_metrics_dict = seq_metrics.to_pandas().iloc[0].to_dict()
                 
-                # Get MAE for this sequence
-                seq_metrics = mae_metrics.filter(pl.col('unique_id') == unique_id_int)
+                # Create list of (model_name, mae_value) tuples
+                model_mae_pairs = []
                 
-                if len(seq_metrics) > 0:
-                    seq_metrics_row = seq_metrics.row(0)
-                    seq_metrics_dict = seq_metrics.to_pandas().iloc[0].to_dict()
-                    
-                    # Create list of (model_name, mae_value) tuples
-                    model_mae_pairs = []
-                    
-                    for model_name in model_names:
-                        # Check if model column exists and MAE is below threshold
-                        if model_name in seq_metrics_dict:
-                            mae_value = seq_metrics_dict[model_name]
-                            # Include model if MAE is not null and below threshold
-                            if pd.notna(mae_value) and mae_value < mae_threshold:
+                for model_name in model_names:
+                    # Check if model column exists and MAE is below threshold
+                    if model_name in seq_metrics_dict:
+                        mae_value = seq_metrics_dict[model_name]
+                        # Include model if MAE is not null
+                        if pd.notna(mae_value):
+                            # Apply threshold filter only if specified
+                            if mae_threshold is None or mae_value < mae_threshold:
                                 model_mae_pairs.append((model_name, float(mae_value)))
-                            else:
-                                action.log(message_type="model_filtered_by_threshold", model=model_name, mae=float(mae_value) if pd.notna(mae_value) else None, threshold=mae_threshold)
+                            elif mae_threshold is not None:
+                                action.log(message_type="model_filtered_by_threshold", model=model_name, mae=float(mae_value), threshold=mae_threshold)
                         else:
-                            action.log(message_type="model_mae_not_found", model=model_name)
-                    
-                    # Sort by MAE (ascending) and take top N
-                    model_mae_pairs.sort(key=lambda x: x[1])
-                    
-                    if top_models is not None and len(model_mae_pairs) > top_models:
-                        action.log(message_type="selecting_top_models", total=len(model_mae_pairs), top=top_models)
-                        model_mae_pairs = model_mae_pairs[:top_models]
-                    
-                    model_names = [name for name, mae in model_mae_pairs]
-                    action.log(message_type="models_after_filtering", count=len(model_names), models=model_names)
-            
-            # Remove models with null predictions
-            models_to_plot = []
-            for model_name in model_names:
-                pred_df = predictions.get(model_name)
-                if pred_df is not None:
-                    # Check if there are non-null values for this model
-                    if model_name in pred_df.columns and pred_df[model_name].notna().any():
-                        models_to_plot.append(model_name)
+                            action.log(message_type="model_mae_null", model=model_name)
                     else:
-                        action.log(message_type="model_has_nulls", model=model_name)
-            
-            model_names = models_to_plot
-            
-            if len(model_names) == 0:
-                action.log(message_type="no_valid_models_after_filtering")
-                return False
-            
-            # Get first model's predictions for this sequence
-            combined_pred = predictions[model_names[0]][
-                predictions[model_names[0]]['unique_id'] == unique_id_int
+                        # If model not in metrics, include it anyway
+                        action.log(message_type="model_mae_not_found", model=model_name)
+                        model_mae_pairs.append((model_name, float('inf')))
+                
+                # Sort by MAE (ascending) and take top N
+                model_mae_pairs.sort(key=lambda x: x[1])
+                
+                if top_models is not None and len(model_mae_pairs) > top_models:
+                    action.log(message_type="selecting_top_models", total=len(model_mae_pairs), top=top_models)
+                    model_mae_pairs = model_mae_pairs[:top_models]
+                
+                model_names = [name for name, mae in model_mae_pairs if mae != float('inf')]
+                action.log(message_type="models_after_filtering", count=len(model_names), models=model_names)
+        
+        # Remove models with null predictions
+        models_to_plot = []
+        for model_name in model_names:
+            pred_df = predictions.get(model_name)
+            if pred_df is not None:
+                # The model column name in predictions may not include the _exog suffix
+                # Try both the full model name and the base name without _exog
+                possible_col_names = [model_name]
+                if model_name.endswith('_exog'):
+                    base_name = model_name.replace('_exog', '')
+                    possible_col_names.append(base_name)
+                
+                # Check if any of the possible column names exist with non-null values
+                col_found = False
+                for col_name in possible_col_names:
+                    if col_name in pred_df.columns and pred_df[col_name].notna().any():
+                        models_to_plot.append((model_name, col_name))
+                        col_found = True
+                        break
+                
+                if not col_found:
+                    action.log(message_type="model_has_nulls", model=model_name, available_cols=list(pred_df.columns))
+            else:
+                action.log(message_type="model_prediction_missing", model=model_name)
+        
+        if len(models_to_plot) == 0:
+            action.log(message_type="no_valid_models_after_filtering")
+            return False
+        
+        # Get first model's predictions for this sequence
+        first_model_name, first_col_name = models_to_plot[0]
+        combined_pred = predictions[first_model_name][
+            predictions[first_model_name]['unique_id'] == unique_id_int
+        ].copy()
+        
+        # Rename the first column to match model name if needed
+        if first_col_name != first_model_name and first_col_name in combined_pred.columns:
+            combined_pred = combined_pred.rename(columns={first_col_name: first_model_name})
+        
+        # Track which models were actually added to combined predictions
+        models_in_pred = [first_model_name]
+        
+        # Join predictions from other models
+        for model_name, col_name in models_to_plot[1:]:
+            model_pred = predictions[model_name][
+                predictions[model_name]['unique_id'] == unique_id_int
             ].copy()
             
-            # Track which models were actually added to combined predictions
-            models_in_pred = [model_names[0]]
-            
-            # Join predictions from other models
-            for model_name in model_names[1:]:
-                model_pred = predictions[model_name][
-                    predictions[model_name]['unique_id'] == unique_id_int
-                ].copy()
+            if len(model_pred) > 0 and col_name in model_pred.columns:
+                # Rename the column to match the model name BEFORE merging
+                if col_name != model_name:
+                    model_pred = model_pred.rename(columns={col_name: model_name})
                 
-                if len(model_pred) > 0 and model_name in model_pred.columns:
-                    # Merge on ds (timestamp) and unique_id
-                    merge_cols = ['ds', 'unique_id']
-                    combined_pred = combined_pred.merge(
-                        model_pred[merge_cols + [model_name]],
-                        on=merge_cols,
-                        how='outer'
-                    )
-                    models_in_pred.append(model_name)
+                # Merge on ds (timestamp) and unique_id
+                merge_cols = ['ds', 'unique_id']
+                combined_pred = combined_pred.merge(
+                    model_pred[merge_cols + [model_name]],
+                    on=merge_cols,
+                    how='outer'
+                )
+                models_in_pred.append(model_name)
+        
+        # Update model_names to only include those actually in combined predictions
+        model_names = models_in_pred
+        
+        # Create plot
+        output_path.mkdir(parents=True, exist_ok=True)
+        
+        if use_plotly:
+            # Use plotly for interactive plots
+            action.log(message_type="using_plotly_backend")
             
-            # Update model_names to only include those actually in combined predictions
-            model_names = models_in_pred
+            # Convert to polars for plotly function
+            df_seq_polars = pl.from_pandas(df_seq)
             
-            # Create plot
-            output_path.mkdir(parents=True, exist_ok=True)
-            
-            if use_plotly:
-                # Use plotly for interactive plots
-                action.log(message_type="using_plotly_backend")
-                
-                # Convert to polars for plotly function
-                import polars as pl
-                df_seq_polars = pl.from_pandas(df_seq)
-                
-                # Create predictions dict for plotly
-                predictions_for_plotly = {}
-                for model_name in model_names:
-                    model_pred = combined_pred[[col for col in ['unique_id', 'ds', model_name] if col in combined_pred.columns]].copy()
+            # Create predictions dict for plotly
+            predictions_for_plotly = {}
+            for model_name in model_names:
+                # Check if model column exists in combined_pred
+                if model_name in combined_pred.columns:
+                    model_pred = combined_pred[['unique_id', 'ds', model_name]].copy()
                     predictions_for_plotly[model_name] = model_pred
-                
-                # Use plotly comparison plot
-                plot_comparison_plotly(
-                    df=df_seq_polars,
-                    predictions=predictions_for_plotly,
-                    output_path=output_path.parent,  # Parent since plot_comparison_plotly creates 'comparison' subdir
-                    sequence_id=unique_id_int,
-                    show_all_ticks=True,
-                    tickangle=-90,
-                )
-                
-                # Plotly creates HTML + PNG, return success
-                action.log(message_type="plot_saved_plotly", models_plotted=len(model_names))
-                return True
-            else:
-                # Use matplotlib for static plots
-                action.log(message_type="using_matplotlib_backend")
-                
-                # Convert unique_id to string for plot_series
-                df_seq_plot = df_seq.copy()
-                df_seq_plot['unique_id'] = df_seq_plot['unique_id'].astype(str)
-                
-                combined_pred_plot = combined_pred.copy()
-                combined_pred_plot['unique_id'] = combined_pred_plot['unique_id'].astype(str)
-                
-                fig = plot_series(
-                    df_seq_plot,
-                    combined_pred_plot,
-                    models=model_names,
-                    level=None,
-                    max_insample_length=None,  # Show all historical points
-                    plot_random=False,
-                    ids=[str(unique_id_int)],
-                    engine="matplotlib"
-                )
-
-                # Set larger figure size for better visualization and more compact layout
-                fig.set_size_inches(18, 8)
-
-                # Make ground truth (y) line bolder for better visibility and rename label
-                for ax in fig.get_axes():
-                    for line in ax.get_lines():
-                        label = line.get_label()
-                        if label == 'y':  # Ground truth line
-                            line.set_label('Ground Truth Glucose')
-                            line.set_linewidth(3)
-                            line.set_zorder(10)  # Bring to front
-                        else:
-                            line.set_linewidth(1.5)
-
-                    # Update legend with new label
-                    ax.legend(loc='best')
-
-                    # Improve x-axis formatting
-                    # Rotate labels and ensure proper alignment
-                    for label in ax.get_xticklabels():
-                        label.set_rotation(90)
-                        label.set_horizontalalignment('center')
-                        label.set_verticalalignment('top')
-                        label.set_fontsize(8)
-                    
-                    # Configure tick parameters
-                    ax.tick_params(axis='x', which='major', length=6, width=1, pad=2)
-                    
-                    # Add grid for better readability
-                    ax.grid(True, which='major', alpha=0.3, linestyle='-', axis='both')
-
-                # Save plot
-                plot_file = output_path / filename
-                fig.savefig(str(plot_file), dpi=150, bbox_inches='tight')
-                action.log(message_type="plot_saved", file=str(plot_file), models_plotted=len(model_names))
-                return True
             
-        except Exception as e:
-            action.log(message_type="plotting_error", error=str(e), error_type=type(e).__name__, traceback=traceback.format_exc())
-            return False
+            # Use plotly comparison plot
+            success = plot_comparison_plotly(
+                df=df_seq_polars,
+                predictions=predictions_for_plotly,
+                output_path=output_path / 'plots',  # plot_comparison_plotly will add 'comparison' subdir
+                sequence_id=unique_id_int,
+                show_all_ticks=True,
+                tickangle=-90,
+            )
+            
+            action.log(message_type="plot_saved_plotly", models_plotted=len(model_names), success=success)
+            return success
+        else:
+            # Use matplotlib for static plots
+            action.log(message_type="using_matplotlib_backend")
+            
+            # Convert unique_id to string for plot_series
+            df_seq_plot = df_seq.copy()
+            df_seq_plot['unique_id'] = df_seq_plot['unique_id'].astype(str)
+            
+            combined_pred_plot = combined_pred.copy()
+            combined_pred_plot['unique_id'] = combined_pred_plot['unique_id'].astype(str)
+            
+            fig = plot_series(
+                df_seq_plot,
+                combined_pred_plot,
+                models=model_names,
+                level=None,
+                max_insample_length=None,  # Show all historical points
+                plot_random=False,
+                ids=[str(unique_id_int)],
+                engine="matplotlib"
+            )
+
+            # Set larger figure size for better visualization and more compact layout
+            fig.set_size_inches(18, 8)
+
+            # Make ground truth (y) line bolder for better visibility and rename label
+            for ax in fig.get_axes():
+                for line in ax.get_lines():
+                    label = line.get_label()
+                    if label == 'y':  # Ground truth line
+                        line.set_label('Ground Truth Glucose')
+                        line.set_linewidth(3)
+                        line.set_zorder(10)  # Bring to front
+                    else:
+                        line.set_linewidth(1.5)
+
+                # Update legend with new label
+                ax.legend(loc='best')
+
+                # Improve x-axis formatting
+                # Rotate labels and ensure proper alignment
+                for label in ax.get_xticklabels():
+                    label.set_rotation(90)
+                    label.set_horizontalalignment('center')
+                    label.set_verticalalignment('top')
+                    label.set_fontsize(8)
+                
+                # Configure tick parameters
+                ax.tick_params(axis='x', which='major', length=6, width=1, pad=2)
+                
+                # Add grid for better readability
+                ax.grid(True, which='major', alpha=0.3, linestyle='-', axis='both')
+
+            # Save plot
+            plot_file = output_path / filename
+            fig.savefig(str(plot_file), dpi=150, bbox_inches='tight')
+            action.log(message_type="plot_saved", file=str(plot_file), models_plotted=len(model_names))
+            return True
 
 
 @app.command()
@@ -486,6 +572,9 @@ def predict(
     Filters models by MAE threshold and shows only top N models by MAE.
     """
     with start_action(action_type="inference_command") as main_action:
+        # Set up eliot logging to stdout
+        to_nice_stdout()
+        
         # Resolve base folder
         base = resolve_base_folder()
         main_action.log(message_type="base_folder", path=str(base))
@@ -550,7 +639,25 @@ def predict(
                 typer.echo(f"   Available models: {', '.join(available_models)}")
                 raise typer.Exit(1)
         else:
-            models_to_use = available_models
+            # Auto-select best models from metrics_summary if available
+            metrics_summary_path = output_path / 'metrics_summary.csv'
+            if metrics_summary_path.exists():
+                typer.echo(f"\n🏆 Auto-selecting best models from metrics summary...")
+                best_models = get_best_models_from_summary(metrics_summary_path, top_n=6)
+                
+                # Filter to only those that are actually available
+                models_to_use = [m for m in best_models if m in available_models]
+                
+                if len(models_to_use) == 0:
+                    typer.echo(f"⚠️  No best models found in available models, using all available models")
+                    models_to_use = available_models
+                else:
+                    typer.echo(f"   Selected top {len(models_to_use)} models by MAE")
+                    for i, model_name in enumerate(models_to_use, 1):
+                        typer.echo(f"   {i}. {model_name}")
+            else:
+                typer.echo(f"\n⚠️  Metrics summary not found, using all available models")
+                models_to_use = available_models
         
         typer.echo(f"\n🔧 Using models ({len(models_to_use)}): {', '.join(models_to_use)}")
         main_action.log(message_type="models_selected", models=models_to_use)
@@ -681,7 +788,6 @@ def predict(
         if plot:
             if selected_unique_id is not None:
                 typer.echo(f"\n📈 Generating comparison plot...")
-                plots_dir = output_path / 'plots' / 'comparison'
                 
                 # Use df_full_for_plot if available (contains last 48 points), otherwise use df
                 df_for_plot = df_full_for_plot if df_full_for_plot is not None else df
@@ -693,22 +799,42 @@ def predict(
                 # Handle top_models=0 as None (show all models)
                 effective_top_models = top_models if top_models and top_models > 0 else None
                 
-                plot_success = plot_model_comparison(
-                    df_pandas,
-                    predictions,
-                    selected_unique_id,
-                    plots_dir,
-                    filename=f'comparison_{selected_unique_id}.png',
-                    metrics_path=metrics_path if metrics_path.exists() else None,
-                    mae_threshold=mae_threshold,
-                    top_models=effective_top_models,
-                    use_plotly=plotly
-                )
+                # Don't use mae_threshold since we already pre-selected the best models
+                # Pass None to disable threshold filtering
+                try:
+                    plot_success = plot_model_comparison(
+                        df_pandas,
+                        predictions,
+                        selected_unique_id,
+                        output_path,  # plot_model_comparison will create plots/comparison subdirs
+                        filename=f'comparison_{selected_unique_id}.png',
+                        metrics_path=metrics_path if metrics_path.exists() else None,
+                        mae_threshold=None,  # Disable threshold filtering since models are pre-selected
+                        top_models=None,  # Don't further filter since models are already pre-selected
+                        use_plotly=plotly
+                    )
+                except Exception as e:
+                    typer.echo(f"   ❌ Error during plot generation: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    plot_success = False
+                    
                 if plot_success:
                     if plotly:
-                        typer.echo(f"   ✅ Interactive plot saved to: {plots_dir / f'comparison_{selected_unique_id}.html'}")
-                        typer.echo(f"   ✅ Static plot saved to: {plots_dir / f'comparison_{selected_unique_id}.png'}")
+                        # Verify files actually exist before claiming success
+                        plots_dir = output_path / 'plots' / 'comparison'
+                        html_path = plots_dir / f'comparison_{selected_unique_id}.html'
+                        png_path = plots_dir / f'comparison_{selected_unique_id}.png'
+                        if html_path.exists():
+                            typer.echo(f"   ✅ Interactive plot saved to: {html_path}")
+                        else:
+                            typer.echo(f"   ⚠️  HTML plot not found at: {html_path}")
+                        if png_path.exists():
+                            typer.echo(f"   ✅ Static plot saved to: {png_path}")
+                        else:
+                            typer.echo(f"   ⚠️  PNG plot not found at: {png_path}")
                     else:
+                        plots_dir = output_path / 'plots' / 'comparison'
                         typer.echo(f"   ✅ Plot saved to: {plots_dir / f'comparison_{selected_unique_id}.png'}")
                 else:
                     typer.echo(f"   ❌ Failed to generate plot for {selected_unique_id}")

@@ -232,3 +232,4 @@ Your existing code will continue to work with matplotlib by default. To switch t
 
 All plots will now be generated with plotly, creating both HTML and PNG outputs.
 
+

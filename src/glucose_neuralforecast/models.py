@@ -27,6 +27,11 @@ def get_models_supporting_exogenous() -> Set[str]:
     Based on training tests, these models actually support historical exogenous variables:
     - Models that work: NHITS, NBEATSx, MLP, LSTM, GRU, RNN, DilatedRNN, TCN, BiTCN
     - Models that fail: VanillaTransformer, Informer, Autoformer, FEDformer
+    - Models with issues: 
+      - HINT: Hierarchical model with different initialization (requires S matrix, model, reconciliation)
+      - DeepAR: Has hist_exog_list parameter but raises exception when used
+      - TimesNet: Has hist_exog_list parameter but raises exception when used
+    - Multivariate models (require n_series parameter): MLPMultivariate, TimeXer, TSMixerx
 
     Returns:
         Set[str]: Set of model names that support exogenous variables
@@ -36,7 +41,7 @@ def get_models_supporting_exogenous() -> Set[str]:
         'NBEATSx',
         'NHITS',
         'MLP',
-        'MLPMultivariate',
+        'MLPMultivariate',  # Requires n_series parameter
 
         # RNN-based models that support exogenous
         'LSTM',
@@ -50,15 +55,12 @@ def get_models_supporting_exogenous() -> Set[str]:
 
         # Specialized models that support exogenous
         'TFT',
-        'DeepAR',
         'DeepNPTS',
         'TiDE',
-        'HINT',
 
         # Recent architectures that support exogenous
-        'TimesNet',
-        'TimeXer',
-        'TSMixerx',
+        'TimeXer',  # Requires n_series parameter
+        'TSMixerx',  # Requires n_series parameter
 
         # KAN models that support exogenous
         'KAN'
@@ -68,6 +70,9 @@ def get_models_supporting_exogenous() -> Set[str]:
 def get_available_models(horizon: int, input_size: int, max_steps: int) -> dict:
     """
     Get dictionary of all available models with their constructors.
+    
+    Note: HINT is excluded because it's a hierarchical reconciliation model that requires
+    different initialization parameters (S matrix, base model, reconciliation method).
     
     Args:
         horizon: Forecast horizon
@@ -112,7 +117,6 @@ def get_available_models(horizon: int, input_size: int, max_steps: int) -> dict:
         'DeepAR': lambda: DeepAR(input_size=input_size, h=horizon, max_steps=max_steps),
         'DeepNPTS': lambda: DeepNPTS(input_size=input_size, h=horizon, max_steps=max_steps),
         'TiDE': lambda: TiDE(input_size=input_size, h=horizon, max_steps=max_steps),
-        'HINT': lambda: HINT(input_size=input_size, h=horizon, max_steps=max_steps),
         
         # GNN and advanced models
         'StemGNN': lambda: StemGNN(input_size=input_size, h=horizon, max_steps=max_steps),
@@ -136,6 +140,11 @@ def get_default_models() -> List[str]:
     """
     Get the default list of models to train.
     Only models that actually support exogenous variables are included here.
+    
+    Excluded models:
+    - HINT: Hierarchical model with different initialization (requires S matrix, model, reconciliation)
+    - DeepAR: Has hist_exog_list parameter but raises exception when used
+    - TimesNet: Has hist_exog_list parameter but raises exception when used
 
     Returns:
         List[str]: List of default model names that support exogenous variables
@@ -148,9 +157,9 @@ def get_default_models() -> List[str]:
         # CNN-based models that support exogenous
         'TCN', 'BiTCN',
         # Specialized models that support exogenous
-        'TFT', 'DeepAR', 'DeepNPTS', 'TiDE', 'HINT',
+        'TFT', 'DeepNPTS', 'TiDE',
         # Recent architectures that support exogenous
-        'TimesNet', 'TimeXer', 'TSMixerx',
+        'TimeXer', 'TSMixerx',
         # KAN models that support exogenous
         'KAN'
     ]
@@ -194,6 +203,9 @@ def get_models_by_category() -> dict:
     """
     Get models organized by category for display purposes.
     
+    Note: HINT is excluded from available models because it's a hierarchical reconciliation
+    model that requires different initialization (S matrix, base model, reconciliation method).
+    
     Returns:
         dict: Dictionary mapping category names to list of model names
     """
@@ -203,7 +215,7 @@ def get_models_by_category() -> dict:
         "CNN-based models": ['TCN', 'BiTCN'],
         "Linear models": ['DLinear', 'NLinear'],
         "Transformer-based models": ['VanillaTransformer', 'Informer', 'Autoformer', 'FEDformer', 'PatchTST', 'iTransformer'],
-        "Specialized models": ['TFT', 'DeepAR', 'DeepNPTS', 'TiDE', 'HINT'],
+        "Specialized models": ['TFT', 'DeepAR', 'DeepNPTS', 'TiDE'],
         "GNN and advanced models": ['StemGNN', 'SOFTS'],
         "Recent/advanced architectures": ['TimesNet', 'TimeLLM', 'TimeMixer', 'TimeXer', 'TSMixer', 'TSMixerx'],
         "KAN models": ['KAN', 'RMoK']

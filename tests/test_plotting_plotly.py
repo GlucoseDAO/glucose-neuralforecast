@@ -227,3 +227,4 @@ def test_custom_dimensions(sample_data, tmp_path):
     assert (plots_dir / 'sequence_seq_1.html').exists()
     assert (plots_dir / 'sequence_seq_1.png').exists()
 
+
