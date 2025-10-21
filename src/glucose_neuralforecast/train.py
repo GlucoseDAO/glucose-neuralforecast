@@ -131,10 +131,9 @@ def train(
         logs_dir.mkdir(parents=True, exist_ok=True)
         
         # Set up logging with pycomfort
-        log_basename = 'training'
         to_nice_file(
-            json_path=str(logs_dir / f'{log_basename}.json'),
-            log_path=str(logs_dir / f'{log_basename}.log')
+            output_file=logs_dir / f'train_{max_steps}.json',
+            rendered_file=logs_dir / f'train_{max_steps}.log'
         )
         
         main_action.log(message_type="logging_setup", logs_dir=str(logs_dir))
