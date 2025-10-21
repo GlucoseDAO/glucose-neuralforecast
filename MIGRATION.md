@@ -6,6 +6,9 @@ The project now uses a versioned training run system where each training session
 
 ## What Changed
 
+### Plotting is Now Mandatory
+Plotting dependencies (matplotlib, seaborn) are now required and always available. All plotting functionality is enabled by default.
+
 ### Old Structure (deprecated)
 ```
 data/output/

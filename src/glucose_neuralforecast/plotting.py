@@ -5,14 +5,7 @@ from pathlib import Path
 import polars as pl
 import pandas as pd
 from eliot import start_action
-
-# Optional plotting
-HAS_PLOTTING = False
-try:
-    from utilsforecast.plotting import plot_series
-    HAS_PLOTTING = True
-except ImportError:
-    pass
+from utilsforecast.plotting import plot_series
 
 
 def plot_predictions(
@@ -32,9 +25,6 @@ def plot_predictions(
         output_path: Directory to save plots
         max_sequences: Maximum number of sequences to plot
     """
-    if not HAS_PLOTTING:
-        return
-    
     plots_dir = output_path / 'plots' / model_name
     plots_dir.mkdir(parents=True, exist_ok=True)
     
@@ -62,14 +52,25 @@ def plot_predictions(
                         cv_seq.drop(columns=['cutoff'] if 'cutoff' in cv_seq.columns else []),
                         models=[model_name],
                         level=None,
-                        max_insample_length=500,  # Show last 500 points of history
+                        max_insample_length=None,  # Show all historical points
                         plot_random=False,
-                        ids=[seq_id]
+                        ids=[seq_id],
+                        engine="matplotlib"
                     )
-                    
+
+                    # Customize the plot for better readability
+                    fig.set_size_inches(16, 6)  # Make plot wider and shorter for more compact layout
+
+                    # Rotate x-axis labels vertically for better space utilization
+                    for ax in fig.get_axes():
+                        ax.tick_params(axis='x', labelrotation=90, labelsize=8)
+                        # Make x-axis labels more compact
+                        for label in ax.get_xticklabels():
+                            label.set_horizontalalignment('center')
+
                     # Save plot
                     plot_file = plots_dir / f'sequence_{seq_id}.png'
-                    fig.write_image(str(plot_file))
+                    fig.savefig(str(plot_file), dpi=150, bbox_inches='tight')
                     action.log(message_type="plot_saved", sequence=seq_id, file=str(plot_file))
                     
                 except Exception as e:

@@ -23,34 +23,45 @@ from neuralforecast.models import (
 def get_models_supporting_exogenous() -> Set[str]:
     """
     Get the set of model names that support exogenous variables (marked with F, F/H/S, or F/S in docs).
-    
+
+    Based on training tests, these models actually support historical exogenous variables:
+    - Models that work: NHITS, NBEATSx, MLP, LSTM, GRU, RNN, DilatedRNN, TCN, BiTCN
+    - Models that fail: VanillaTransformer, Informer, Autoformer, FEDformer
+
     Returns:
         Set[str]: Set of model names that support exogenous variables
     """
     return {
-        'Autoformer',
-        'BiTCN',
-        'DeepAR',
-        'DeepNPTS',
-        'DilatedRNN',
-        'FEDformer',
-        'GRU',
-        'HINT',
-        'Informer',
-        'KAN',
-        'LSTM',
-        'MLP',
-        'MLPMultivariate',
+        # MLP-based models that support exogenous
         'NBEATSx',
         'NHITS',
+        'MLP',
+        'MLPMultivariate',
+
+        # RNN-based models that support exogenous
+        'LSTM',
+        'GRU',
         'RNN',
+        'DilatedRNN',
+
+        # CNN-based models that support exogenous
         'TCN',
+        'BiTCN',
+
+        # Specialized models that support exogenous
         'TFT',
+        'DeepAR',
+        'DeepNPTS',
         'TiDE',
+        'HINT',
+
+        # Recent architectures that support exogenous
         'TimesNet',
         'TimeXer',
         'TSMixerx',
-        'VanillaTransformer'
+
+        # KAN models that support exogenous
+        'KAN'
     }
 
 
@@ -124,25 +135,23 @@ def get_available_models(horizon: int, input_size: int, max_steps: int) -> dict:
 def get_default_models() -> List[str]:
     """
     Get the default list of models to train.
-    All models listed here support exogenous variables (hist_exog_list).
-    
+    Only models that actually support exogenous variables are included here.
+
     Returns:
-        List[str]: List of default model names
+        List[str]: List of default model names that support exogenous variables
     """
     return [
-        # MLP-based with exog support
+        # MLP-based models that support exogenous
         'NHITS', 'NBEATSx', 'MLP', 'MLPMultivariate',
-        # RNN-based with exog support
+        # RNN-based models that support exogenous
         'LSTM', 'GRU', 'RNN', 'DilatedRNN',
-        # CNN-based with exog support
+        # CNN-based models that support exogenous
         'TCN', 'BiTCN',
-        # Transformer-based with exog support
-        'VanillaTransformer', 'Informer', 'Autoformer', 'FEDformer',
-        # Specialized models with exog support
+        # Specialized models that support exogenous
         'TFT', 'DeepAR', 'DeepNPTS', 'TiDE', 'HINT',
-        # Recent architectures with exog support
+        # Recent architectures that support exogenous
         'TimesNet', 'TimeXer', 'TSMixerx',
-        # KAN models with exog support
+        # KAN models that support exogenous
         'KAN'
     ]
 

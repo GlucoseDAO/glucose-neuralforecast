@@ -62,18 +62,23 @@ def main() -> None:
     selected_id = cherry_pick_sequence(metrics_path, best=True)
     print(f"   Selected sequence: {selected_id}")
     
-    # Load data
-    print("\n📊 Loading data...")
-    df = load_glucose_data(input_path, include_exogenous=False)
-    
-    # Filter to selected sequence
-    df_filtered = df.filter(df['unique_id'] == selected_id)
-    print(f"   Filtered to sequence {selected_id}: {len(df_filtered)} rows")
-    
     # Select a few models for demonstration (or use all)
     # For demo purposes, let's use just 3-5 models if more are available
     models_to_use = available_models[:min(5, len(available_models))]
     print(f"\n🔧 Using models for comparison: {', '.join(models_to_use)}")
+    
+    # Determine if we need exogenous variables based on models
+    needs_exogenous = any('_exog' in model_name for model_name in models_to_use)
+    if needs_exogenous:
+        print("   🔗 Detected models requiring exogenous variables")
+    
+    # Load data
+    print(f"\n📊 Loading data (exogenous: {needs_exogenous})...")
+    df = load_glucose_data(input_path, include_exogenous=needs_exogenous)
+    
+    # Filter to selected sequence
+    df_filtered = df.filter(df['unique_id'] == selected_id)
+    print(f"   Filtered to sequence {selected_id}: {len(df_filtered)} rows")
     
     # Run inference
     print("\n🔮 Running inference...")

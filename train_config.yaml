@@ -30,4 +30,5 @@ models:
 n_windows: 3
 test_size: null
 log_file: null
+use_plotly: true
 

@@ -114,18 +114,31 @@ def combine_metrics(
         
         typer.echo("\n📈 Creating metrics summary...")
         
-        # Create summary: for each metric, aggregate across all unique_ids
+        # Create summary: for each model, aggregate metrics across all unique_ids
         summary_rows = []
-        for metric_name in combined_metrics['metric'].unique():
-            metric_data = combined_metrics.filter(pl.col('metric') == metric_name)
-            row = {'metric': metric_name}
-            for model_col in model_cols:
-                if model_col in metric_data.columns:
-                    row[f'{model_col}_mean'] = metric_data[model_col].mean()
-                    row[f'{model_col}_std'] = metric_data[model_col].std()
+        for model_col in model_cols:
+            row = {'model': model_col}
+            for metric_name in sorted(combined_metrics['metric'].unique()):
+                metric_data = combined_metrics.filter(
+                    (pl.col('metric') == metric_name) & (pl.col(model_col).is_not_null())
+                )
+                if len(metric_data) > 0:
+                    # Get mean value for this metric across all unique_ids
+                    mean_val = metric_data[model_col].mean()
+                    row[metric_name] = float(mean_val) if mean_val is not None else None
             summary_rows.append(row)
         
         summary_df = pl.DataFrame(summary_rows)
+        
+        # Ensure metric columns are float type and sort by MAE
+        metric_cols = [col for col in summary_df.columns if col not in ['model']]
+        for col in metric_cols:
+            summary_df = summary_df.with_columns(pl.col(col).cast(pl.Float64))
+        
+        # Sort by MAE in ascending order
+        if 'mae' in summary_df.columns:
+            summary_df = summary_df.sort('mae')
+        
         summary_df.write_csv(metrics_summary_path)
         typer.echo(f"✅ Metrics summary saved to: {metrics_summary_path}")
         action.log(message_type="summary_saved", path=str(metrics_summary_path))

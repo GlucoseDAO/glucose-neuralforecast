@@ -1,15 +1,17 @@
 """Configuration management for training."""
 
 from pathlib import Path
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Literal
 from datetime import datetime
 
 import yaml
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 
 class TrainingConfig(BaseModel):
     """Configuration for neural forecast training."""
+    
+    model_config = ConfigDict(extra="forbid")
     
     run_id: Optional[str] = Field(
         None,
@@ -66,9 +68,10 @@ class TrainingConfig(BaseModel):
         None,
         description="Path to log file"
     )
-    
-    class Config:
-        extra = "forbid"
+    use_plotly: bool = Field(
+        True,
+        description="Use plotly for interactive plots (default: True). Set to False for matplotlib."
+    )
 
 
 def load_config(config_path: Path) -> TrainingConfig:
@@ -116,7 +119,8 @@ def save_config(config: TrainingConfig, output_path: Path) -> None:
         'models': config.models,
         'n_windows': config.n_windows,
         'test_size': config.test_size,
-        'log_file': config.log_file
+        'log_file': config.log_file,
+        'use_plotly': config.use_plotly
     }
     
     with open(output_path, 'w') as f:
@@ -175,4 +179,28 @@ def list_training_runs(base_output_dir: Path) -> List[Dict[str, Any]]:
             runs.append(run_info)
     
     return runs
+
+
+def get_latest_run(base_output_dir: Path) -> Optional[str]:
+    """
+    Get the most recent training run ID.
+    
+    Args:
+        base_output_dir: Base output directory (e.g., data/output)
+        
+    Returns:
+        str: The run_id of the most recent run, or None if no runs exist
+    """
+    runs = list_training_runs(base_output_dir)
+    
+    if not runs:
+        return None
+    
+    # Runs are already sorted by most recent first
+    # Only return runs that have models
+    for run in runs:
+        if run['models_exist']:
+            return run['run_id']
+    
+    return None
 

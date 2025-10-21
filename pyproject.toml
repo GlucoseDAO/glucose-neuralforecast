@@ -10,6 +10,7 @@ requires-python = ">=3.13"
 dependencies = [
     "eliot>=1.17.5",
     "kaleido>=0.2.1",
+    "matplotlib>=3.10.7",
     "neuralforecast>=3.1.2",
     "plotly>=6.3.1",
     "polars>=1.34.0",
@@ -17,6 +18,7 @@ dependencies = [
     "pydantic>=2.0.0",
     "pyyaml>=6.0.0",
     "scipy>=1.16.2",
+    "seaborn>=0.13.2",
     "typer>=0.20.0",
     "utilsforecast>=0.2.14",
 ]

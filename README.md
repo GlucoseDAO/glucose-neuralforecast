@@ -8,7 +8,8 @@ Repository to experiment with the NeuralForecast library for predicting glucose 
 - **Versioned training runs**: Each training run gets a unique ID and isolated directory structure
 - **Configuration persistence**: Training configuration automatically saved with each run
 - **Run management**: List and select from multiple training runs for inference
-- **Exogenous variables support**: Models that support exogenous variables are automatically trained both with and without them
+- **Exogenous variables support**: All 24 default models support exogenous variables (fast insulin, long insulin, carbs, flow_amount)
+- **Dual training mode**: Each model trained twice - univariate and with exogenous variables (48 configurations total)
 - **YAML configuration**: Define training parameters in a YAML file for reproducibility
 - **Iterative training**: Train models one-by-one with progress tracking
 - **Crash resilience**: If one model fails, training continues with the next
@@ -17,17 +18,28 @@ Repository to experiment with the NeuralForecast library for predicting glucose 
 - **Comprehensive metrics**: MAE, MSE, RMSE, MAPE calculated for each model
 - **Individual model saving**: Each model saved separately for easy deployment
 - **Detailed logging**: Step numbers, progress tracking, and error logs
-- **Wide default selection**: 12 diverse models trained by default
+- **Wide default selection**: 24 diverse models with exogenous support trained by default (48 total configurations)
 - **Structured logging**: Using Eliot for detailed execution tracking
 
 ### Inference
 - **Model loading**: Load and use any trained model for predictions
+- **Auto-detect exogenous**: Automatically loads exogenous variables when using models trained with `_exog` suffix
 - **Cherry-pick mode**: Automatically select best or random sequences for evaluation
 - **Multi-model comparison**: Compare predictions from multiple models simultaneously
 - **Comparison plots**: Generate professional visualizations comparing all models
 - **Flexible prediction**: Predict on specific sequences or entire datasets
 - **Batch processing**: Run inference with multiple models in parallel
 - **Model selection**: Choose specific models or use all trained models
+
+### Visualization
+- **Dual backends**: Choose between matplotlib (legacy) or plotly (enhanced, default)
+- **Interactive plots**: Plotly plots support zooming, panning, and hover tooltips
+- **All time points visible**: Display every time point on x-axis without skipping
+- **Vertical labels**: Space-efficient vertical tick labels prevent overlapping
+- **Dual output formats**: Generate both interactive HTML and static PNG files
+- **Model comparison**: Compare multiple models in a single interactive plot
+- **Interactive dashboards**: Multi-sequence dashboards with subplots
+- **Customizable**: Control tick angles, plot dimensions, and styling
 
 ## Installation
 
@@ -39,22 +51,22 @@ uv sync
 
 ### Quick Start
 
-1. **List available models**:
-```bash
-uv run list-models
-```
-
-2. **Train models** (automatically creates a versioned run):
+1. **Train models** (automatically creates a versioned run):
 ```bash
 uv run train
 ```
 
-3. **List training runs**:
+2. **Run inference** (automatically uses latest training run):
+```bash
+uv run predict --cherry-pick
+```
+
+3. **List all training runs**:
 ```bash
 uv run list-runs
 ```
 
-4. **Run inference** on a specific training run:
+4. **Use specific training run** (optional):
 ```bash
 uv run predict --run-id run_20241021_130000 --cherry-pick
 ```
@@ -124,7 +136,48 @@ models:
 n_windows: 3
 test_size: null
 log_file: null
+plotting_backend: plotly  # 'plotly' (default) or 'matplotlib'
 ```
+
+### Visualization with Plotly (Enhanced)
+
+The project now includes enhanced plotly-based visualization with better tick display and interactivity.
+
+**Key Features:**
+- ✅ All time points visible on x-axis (no skipping)
+- ✅ Vertical labels to save space
+- ✅ Interactive zooming and panning
+- ✅ Hover tooltips with exact values
+- ✅ Both HTML (interactive) and PNG (static) outputs
+
+**Using plotly backend (default):**
+
+```bash
+# Train with plotly visualization
+uv run train --plotting-backend plotly --models "LSTM,NHITS"
+
+# Or set in config file
+plotting_backend: plotly
+```
+
+**Customization in Python:**
+
+```python
+from glucose_neuralforecast.plotting_plotly import plot_predictions_plotly
+
+plot_predictions_plotly(
+    df=df,
+    cv_df=predictions,
+    model_name="LSTM",
+    output_path=output_dir,
+    show_all_ticks=True,   # Show every time point
+    tickangle=-90,          # Vertical labels (-90°)
+    height=600,
+    width=1400,
+)
+```
+
+For detailed documentation, see [docs/PLOTLY_VISUALIZATION.md](docs/PLOTLY_VISUALIZATION.md)
 
 ### Basic Training (Command Line)
 

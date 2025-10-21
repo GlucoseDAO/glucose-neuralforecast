@@ -12,8 +12,9 @@ from utilsforecast.evaluation import evaluate
 from utilsforecast.losses import mae, mse, rmse, mape
 
 from glucose_neuralforecast.utils import resolve_base_folder
-from glucose_neuralforecast.data import load_glucose_data
+from glucose_neuralforecast.data import load_glucose_data, get_exogenous_columns
 from glucose_neuralforecast.plotting import plot_predictions
+from glucose_neuralforecast.plotting_plotly import plot_predictions_plotly
 from glucose_neuralforecast.models import (
     get_model_list,
     get_available_models,
@@ -59,10 +60,14 @@ def list_models() -> None:
     typer.echo("  MLP-based: NHITS, NBEATSx, MLP, MLPMultivariate")
     typer.echo("  RNN-based: LSTM, GRU, RNN, DilatedRNN")
     typer.echo("  CNN-based: TCN, BiTCN")
-    typer.echo("  Transformers: VanillaTransformer, Informer, Autoformer, FEDformer")
     typer.echo("  Specialized: TFT, DeepAR, DeepNPTS, TiDE, HINT")
     typer.echo("  Recent: TimesNet, TimeXer, TSMixerx")
-    typer.echo("  KAN: KAN\n")
+    typer.echo("  KAN: KAN")
+    # Count total available models
+    from glucose_neuralforecast.models import get_available_models
+    available_models_dict = get_available_models(horizon=12, input_size=48, max_steps=5000)
+    typer.echo(f"\n📝 Total available models: {len(available_models_dict)}")
+    typer.echo("  (Note: Some models don't support exogenous variables and will only be trained without them)\n")
 
 
 @app.command()
@@ -165,6 +170,7 @@ def train_from_config(
     typer.echo(f"  Models: {', '.join(config.models)}")
     typer.echo(f"  N windows: {config.n_windows}")
     typer.echo(f"  Test size: {config.test_size}")
+    typer.echo(f"  Use plotly: {config.use_plotly}")
     
     # Call the train function with config parameters
     train(
@@ -177,7 +183,8 @@ def train_from_config(
         models_to_train=','.join(config.models),
         n_windows=config.n_windows,
         test_size=config.test_size,
-        log_file=config.log_file
+        log_file=config.log_file,
+        plotly=config.use_plotly
     )
 
 
@@ -214,7 +221,7 @@ def train(
         help="Input size for the model (number of historical time steps)"
     ),
     max_steps: int = typer.Option(
-        1000,
+        2000,
         "--max-steps",
         "-s",
         help="Maximum training steps for each model"
@@ -223,7 +230,7 @@ def train(
         None,
         "--models",
         "-m",
-        help="Comma-separated list of models to train (e.g., 'NBEATS,NHITS,LSTM'). If not provided, trains all 24 models that support exogenous variables"
+        help="Comma-separated list of models to train (e.g., 'NBEATS,NHITS,LSTM'). If not provided, trains all 16 models that support exogenous variables"
     ),
     n_windows: int = typer.Option(
         3,
@@ -242,11 +249,18 @@ def train(
         "--log-file",
         "-l",
         help="Path to log file. If not provided, uses data/output/training.log"
+    ),
+    plotly: bool = typer.Option(
+        True,
+        "--plotly/--no-plotly",
+        help="Use plotly for interactive plots (default: True). Use --no-plotly for matplotlib."
     )
 ) -> None:
     """
     Train multiple NeuralForecast models on glucose data with cross-validation.
     Models are saved individually and metrics (MAE, MSE, RMSE, MAPE) are calculated and saved as CSV.
+    Only models that support exogenous variables are trained with exogenous variables.
+    Models without exogenous support are trained without them.
     """
     with start_action(action_type="train_neuralforecast") as main_action:
         # Resolve base folder
@@ -391,18 +405,80 @@ def train(
                     typer.echo(f"  📊 Loading data (exogenous: {use_exogenous})...")
                     df = load_glucose_data(input_path, include_exogenous=use_exogenous)
                     
+                    # Define exogenous column names
+                    hist_exog_list = get_exogenous_columns() if use_exogenous else None
+                    
                     action.log(
                         message_type="data_loaded",
                         shape=df.shape,
                         columns=df.columns,
                         unique_sequences=df['unique_id'].n_unique(),
-                        date_range=f"{df['ds'].min()} to {df['ds'].max()}"
+                        date_range=f"{df['ds'].min()} to {df['ds'].max()}",
+                        hist_exog_list=hist_exog_list
                     )
                     typer.echo(f"  Data shape: {df.shape}, columns: {df.columns}")
+                    if hist_exog_list:
+                        typer.echo(f"  Exogenous variables: {hist_exog_list}")
+                        typer.echo(f"  Column dtypes: {df.dtypes}")
                     
-                    # Initialize single model
-                    action.log(message_type="initializing_model")
-                    model = available_models_dict[model_name]()
+                    # Convert to pandas when using exogenous variables for better compatibility
+                    if use_exogenous:
+                        action.log(message_type="converting_to_pandas")
+                        df = df.to_pandas()
+                        typer.echo(f"  Converted to pandas, dtypes: {df.dtypes.to_dict()}")
+                    
+                    # Initialize single model with exogenous variables if needed
+                    action.log(message_type="initializing_model", hist_exog_list=hist_exog_list)
+                    model_constructor = available_models_dict[model_name]
+                    
+                    # Get model instance - models are created by lambdas in get_available_models()
+                    # We need to create the model with hist_exog_list if using exogenous variables
+                    from neuralforecast.models import (
+                        NBEATS, NHITS, NBEATSx, LSTM, GRU, RNN, MLP, MLPMultivariate,
+                        DLinear, NLinear, TiDE, TCN, BiTCN, DeepAR, DeepNPTS, DilatedRNN,
+                        TFT, HINT, VanillaTransformer, Informer, Autoformer, FEDformer,
+                        PatchTST, iTransformer, StemGNN, SOFTS, TimesNet, TimeLLM,
+                        TimeMixer, TimeXer, TSMixer, TSMixerx, KAN, RMoK
+                    )
+                    
+                    # Map model names to their classes
+                    model_classes = {
+                        'NBEATS': NBEATS, 'NHITS': NHITS, 'NBEATSx': NBEATSx,
+                        'LSTM': LSTM, 'GRU': GRU, 'RNN': RNN,
+                        'MLP': MLP, 'MLPMultivariate': MLPMultivariate,
+                        'DLinear': DLinear, 'NLinear': NLinear,
+                        'TiDE': TiDE, 'TCN': TCN, 'BiTCN': BiTCN,
+                        'DeepAR': DeepAR, 'DeepNPTS': DeepNPTS,
+                        'DilatedRNN': DilatedRNN, 'TFT': TFT, 'HINT': HINT,
+                        'VanillaTransformer': VanillaTransformer,
+                        'Informer': Informer, 'Autoformer': Autoformer,
+                        'FEDformer': FEDformer, 'PatchTST': PatchTST,
+                        'iTransformer': iTransformer, 'StemGNN': StemGNN,
+                        'SOFTS': SOFTS, 'TimesNet': TimesNet, 'TimeLLM': TimeLLM,
+                        'TimeMixer': TimeMixer, 'TimeXer': TimeXer,
+                        'TSMixer': TSMixer, 'TSMixerx': TSMixerx,
+                        'KAN': KAN, 'RMoK': RMoK
+                    }
+                    
+                    model_class = model_classes.get(model_name)
+                    if model_class is None:
+                        raise ValueError(f"Model class not found for {model_name}")
+                    
+                    # Create model with hist_exog_list if using exogenous variables
+                    if hist_exog_list:
+                        model = model_class(
+                            input_size=input_size,
+                            h=horizon,
+                            max_steps=max_steps,
+                            hist_exog_list=hist_exog_list
+                        )
+                    else:
+                        model = model_class(
+                            input_size=input_size,
+                            h=horizon,
+                            max_steps=max_steps
+                        )
+                    
                     nf = NeuralForecast(models=[model], freq='5min')
                     
                     typer.echo(f"  🔄 Running cross-validation for {display_name}...")
@@ -453,11 +529,17 @@ def train(
                     evaluation_pl = pl.from_pandas(evaluation_df)
                     all_metrics[display_name] = evaluation_pl
                     
-                    # Log metrics
-                    metrics_dict = {}
-                    for _, row in evaluation_df.iterrows():
-                        metrics_dict[row['metric']] = float(row[display_name])
-                    action.log(message_type="model_metrics", metrics=metrics_dict)
+                    # Calculate aggregated metrics (mean across all unique_ids)
+                    metrics_summary = {}
+                    for metric_name in ['mae', 'mse', 'rmse', 'mape']:
+                        metric_rows = evaluation_df[evaluation_df['metric'] == metric_name]
+                        if len(metric_rows) > 0:
+                            mean_value = metric_rows[display_name].mean()
+                            std_value = metric_rows[display_name].std()
+                            metrics_summary[f'{metric_name}_mean'] = float(mean_value)
+                            metrics_summary[f'{metric_name}_std'] = float(std_value)
+                    
+                    action.log(message_type="model_metrics", metrics=metrics_summary)
                     
                     # Save incremental metrics by joining all models so far
                     metrics_path = output_path / 'metrics.csv'
@@ -476,15 +558,22 @@ def train(
                         
                         combined_metrics.write_csv(metrics_path)
                     
-                    # Display metrics for this model
-                    typer.echo(f"\n  Metrics for {display_name}:")
-                    for _, row in evaluation_df.iterrows():
-                        typer.echo(f"    {row['metric']}: {row[display_name]:.4f}")
+                    # Display aggregated metrics for this model
+                    typer.echo(f"\n  Metrics for {display_name} (mean ± std across all sequences):")
+                    for metric_name in ['mae', 'mse', 'rmse', 'mape']:
+                        if f'{metric_name}_mean' in metrics_summary:
+                            mean_val = metrics_summary[f'{metric_name}_mean']
+                            std_val = metrics_summary[f'{metric_name}_std']
+                            typer.echo(f"    {metric_name}: {mean_val:.4f} ± {std_val:.4f}")
                     
                     # Plot predictions
-                    typer.echo(f"  📈 Creating prediction plots for {display_name}...")
-                    action.log(message_type="creating_plots")
-                    plot_predictions(df, cv_df_pandas, display_name, output_path)
+                    typer.echo(f"  📈 Creating prediction plots for {display_name} using {'plotly' if plotly else 'matplotlib'}...")
+                    action.log(message_type="creating_plots", use_plotly=plotly)
+                    
+                    if plotly:
+                        plot_predictions_plotly(df, cv_df_pandas, display_name, output_path)
+                    else:
+                        plot_predictions(df, cv_df_pandas, display_name, output_path)
                     
                     # Save model
                     typer.echo(f"  💾 Saving {display_name}...")
@@ -555,23 +644,32 @@ def train(
             typer.echo(f"\n📊 Final metrics saved to: {metrics_path}")
             
             # Also save a summary with aggregated metrics per model
+            # Format: models as rows, metrics as columns, sorted by MAE ascending
             metrics_summary_path = output_path / 'metrics_summary.csv'
             
             # Get list of model columns (exclude unique_id and metric)
             model_cols = [col for col in combined_metrics.columns if col not in ['unique_id', 'metric']]
             
-            # Create summary: for each metric, aggregate across all unique_ids
+            # Create summary: each model is a row, each metric is a column
             summary_rows = []
-            for metric_name in combined_metrics['metric'].unique():
-                metric_data = combined_metrics.filter(pl.col('metric') == metric_name)
-                row = {'metric': metric_name}
-                for model_col in model_cols:
+            for model_col in model_cols:
+                row = {'model': model_col}
+                for metric_name in combined_metrics['metric'].unique():
+                    metric_data = combined_metrics.filter(pl.col('metric') == metric_name)
                     if model_col in metric_data.columns:
-                        row[f'{model_col}_mean'] = metric_data[model_col].mean()
-                        row[f'{model_col}_std'] = metric_data[model_col].std()
+                        mean_val = metric_data[model_col].mean()
+                        std_val = metric_data[model_col].std()
+                        # Ensure MAE is float, not string
+                        row[f'{metric_name.upper()}_mean'] = float(mean_val) if mean_val is not None else None
+                        row[f'{metric_name.upper()}_std'] = float(std_val) if std_val is not None else None
                 summary_rows.append(row)
             
             summary_df = pl.DataFrame(summary_rows)
+            
+            # Sort by MAE in ascending order
+            if 'MAE_mean' in summary_df.columns:
+                summary_df = summary_df.sort('MAE_mean')
+            
             summary_df.write_csv(metrics_summary_path)
             typer.echo(f"📊 Metrics summary saved to: {metrics_summary_path}")
         

@@ -9,6 +9,11 @@ from glucose_neuralforecast.models import (
     get_models_supporting_exogenous,
 )
 from glucose_neuralforecast.plotting import plot_predictions
+from glucose_neuralforecast.plotting_plotly import (
+    plot_predictions_plotly,
+    plot_comparison_plotly,
+    create_interactive_dashboard,
+)
 from glucose_neuralforecast.utils import resolve_base_folder
 from glucose_neuralforecast.config import load_config, save_default_config, TrainingConfig
 from glucose_neuralforecast.inference import (
@@ -27,6 +32,9 @@ __all__ = [
     "get_models_by_category",
     "get_models_supporting_exogenous",
     "plot_predictions",
+    "plot_predictions_plotly",
+    "plot_comparison_plotly",
+    "create_interactive_dashboard",
     "resolve_base_folder",
     "load_config",
     "save_default_config",
