@@ -1,0 +1,33 @@
+data_file: null
+output_dir: null
+horizon: 12
+input_size: 48
+max_steps: 1000
+models:
+- NHITS
+- NBEATSx
+- MLP
+- MLPMultivariate
+- LSTM
+- GRU
+- RNN
+- DilatedRNN
+- TCN
+- BiTCN
+- VanillaTransformer
+- Informer
+- Autoformer
+- FEDformer
+- TFT
+- DeepAR
+- DeepNPTS
+- TiDE
+- HINT
+- TimesNet
+- TimeXer
+- TSMixerx
+- KAN
+n_windows: 3
+test_size: null
+log_file: null
+

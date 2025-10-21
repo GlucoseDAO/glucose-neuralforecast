@@ -1,6 +1,6 @@
 """Model configuration and creation functions."""
 
-from typing import Optional, List
+from typing import Optional, List, Set
 
 import typer
 from neuralforecast.models import (
@@ -18,6 +18,40 @@ from neuralforecast.models import (
     TSMixer, TSMixerx,
     KAN, RMoK
 )
+
+
+def get_models_supporting_exogenous() -> Set[str]:
+    """
+    Get the set of model names that support exogenous variables (marked with F, F/H/S, or F/S in docs).
+    
+    Returns:
+        Set[str]: Set of model names that support exogenous variables
+    """
+    return {
+        'Autoformer',
+        'BiTCN',
+        'DeepAR',
+        'DeepNPTS',
+        'DilatedRNN',
+        'FEDformer',
+        'GRU',
+        'HINT',
+        'Informer',
+        'KAN',
+        'LSTM',
+        'MLP',
+        'MLPMultivariate',
+        'NBEATSx',
+        'NHITS',
+        'RNN',
+        'TCN',
+        'TFT',
+        'TiDE',
+        'TimesNet',
+        'TimeXer',
+        'TSMixerx',
+        'VanillaTransformer'
+    }
 
 
 def get_available_models(horizon: int, input_size: int, max_steps: int) -> dict:
@@ -90,16 +124,26 @@ def get_available_models(horizon: int, input_size: int, max_steps: int) -> dict:
 def get_default_models() -> List[str]:
     """
     Get the default list of models to train.
+    All models listed here support exogenous variables (hist_exog_list).
     
     Returns:
         List[str]: List of default model names
     """
     return [
-        'NBEATS', 'NHITS', 'NBEATSx',  # MLP-based
-        'LSTM', 'GRU', 'DilatedRNN',    # RNN-based
-        'TCN', 'BiTCN',                  # CNN-based
-        'DLinear', 'NLinear',            # Linear
-        'TiDE', 'MLP'                    # Other reliable models
+        # MLP-based with exog support
+        'NHITS', 'NBEATSx', 'MLP', 'MLPMultivariate',
+        # RNN-based with exog support
+        'LSTM', 'GRU', 'RNN', 'DilatedRNN',
+        # CNN-based with exog support
+        'TCN', 'BiTCN',
+        # Transformer-based with exog support
+        'VanillaTransformer', 'Informer', 'Autoformer', 'FEDformer',
+        # Specialized models with exog support
+        'TFT', 'DeepAR', 'DeepNPTS', 'TiDE', 'HINT',
+        # Recent architectures with exog support
+        'TimesNet', 'TimeXer', 'TSMixerx',
+        # KAN models with exog support
+        'KAN'
     ]
 
 
