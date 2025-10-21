@@ -182,7 +182,7 @@ def train(
         typer.echo(f"{'='*70}\n")
         
         # Track results
-        all_metrics: List[Dict[str, Any]] = []
+        all_metrics: Dict[str, pl.DataFrame] = {}  # Store as dict with model name as key
         successful_models: List[str] = []
         failed_models: List[Dict[str, str]] = []
         
@@ -249,9 +249,9 @@ def train(
                         models=[model_name]
                     )
                     
-                    # Add step number to metrics
-                    evaluation_df['step'] = step
-                    all_metrics.append(evaluation_df)
+                    # Convert to polars and store
+                    evaluation_pl = pl.from_pandas(evaluation_df)
+                    all_metrics[model_name] = evaluation_pl
                     
                     # Log metrics
                     metrics_dict = {}
@@ -259,11 +259,22 @@ def train(
                         metrics_dict[row['metric']] = float(row[model_name])
                     action.log(message_type="model_metrics", metrics=metrics_dict)
                     
-                    # Save incremental metrics
+                    # Save incremental metrics by joining all models so far
                     metrics_path = output_path / 'metrics.csv'
                     if all_metrics:
-                        combined_metrics = pd.concat(all_metrics, ignore_index=True)
-                        pl.from_pandas(combined_metrics).write_csv(metrics_path)
+                        # Start with the first model's metrics
+                        combined_metrics = list(all_metrics.values())[0]
+                        
+                        # Join with each subsequent model
+                        for i, model_df in enumerate(list(all_metrics.values())[1:], 1):
+                            combined_metrics = combined_metrics.join(
+                                model_df,
+                                on=['unique_id', 'metric'],
+                                how='outer',
+                                coalesce=True
+                            )
+                        
+                        combined_metrics.write_csv(metrics_path)
                     
                     # Display metrics for this model
                     typer.echo(f"\n  Metrics for {model_name}:")
@@ -329,9 +340,40 @@ def train(
         # Save final metrics summary
         if all_metrics:
             metrics_path = output_path / 'metrics.csv'
-            combined_metrics = pd.concat(all_metrics, ignore_index=True)
-            pl.from_pandas(combined_metrics).write_csv(metrics_path)
+            
+            # Join all model metrics by unique_id and metric
+            combined_metrics = list(all_metrics.values())[0]
+            for model_df in list(all_metrics.values())[1:]:
+                combined_metrics = combined_metrics.join(
+                    model_df,
+                    on=['unique_id', 'metric'],
+                    how='outer',
+                    coalesce=True
+                )
+            
+            combined_metrics.write_csv(metrics_path)
             typer.echo(f"\n📊 Final metrics saved to: {metrics_path}")
+            
+            # Also save a summary with aggregated metrics per model
+            metrics_summary_path = output_path / 'metrics_summary.csv'
+            
+            # Get list of model columns (exclude unique_id and metric)
+            model_cols = [col for col in combined_metrics.columns if col not in ['unique_id', 'metric']]
+            
+            # Create summary: for each metric, aggregate across all unique_ids
+            summary_rows = []
+            for metric_name in combined_metrics['metric'].unique():
+                metric_data = combined_metrics.filter(pl.col('metric') == metric_name)
+                row = {'metric': metric_name}
+                for model_col in model_cols:
+                    if model_col in metric_data.columns:
+                        row[f'{model_col}_mean'] = metric_data[model_col].mean()
+                        row[f'{model_col}_std'] = metric_data[model_col].std()
+                summary_rows.append(row)
+            
+            summary_df = pl.DataFrame(summary_rows)
+            summary_df.write_csv(metrics_summary_path)
+            typer.echo(f"📊 Metrics summary saved to: {metrics_summary_path}")
         
         # Save summary report
         summary_path = output_path / 'training_summary.txt'

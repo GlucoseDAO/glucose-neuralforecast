@@ -21,6 +21,8 @@ dependencies = [
 [project.scripts]
 glucose-train = "glucose_neuralforecast.train:app"
 train = "glucose_neuralforecast.train:app"
+glucose-summarize = "glucose_neuralforecast.summarize:app"
+summarize-metrics = "glucose_neuralforecast.summarize:app"
 
 [build-system]
 requires = ["uv_build>=0.9.2,<0.10.0"]
