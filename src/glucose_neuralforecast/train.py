@@ -20,18 +20,10 @@ from glucose_neuralforecast.models import (
     get_available_models,
     get_default_models,
     get_models_by_category,
-    get_models_supporting_exogenous
+    get_models_supporting_exogenous,
+    get_models_requiring_n_series
 )
-
-
-def get_models_requiring_n_series() -> set:
-    """
-    Get the set of model names that require n_series parameter (multivariate models).
-    
-    Returns:
-        Set of model names that need n_series
-    """
-    return {'MLPMultivariate', 'TimeXer', 'TSMixerx'}
+from glucose_neuralforecast.model_config import get_model_config, get_models_with_special_init
 from glucose_neuralforecast.config import (
     load_config, 
     save_default_config, 
@@ -56,15 +48,18 @@ def list_models() -> None:
     models_by_category = get_models_by_category()
     default_models = get_default_models()
     exog_models = get_models_supporting_exogenous()
+    special_init_models = get_models_with_special_init()
     
     for category, models in models_by_category.items():
         typer.echo(f"\n{category}:")
         for model in models:
             exog_marker = " 🔗" if model in exog_models else ""
-            typer.echo(f"  • {model}{exog_marker}")
+            special_marker = " ⚠️ " if model in special_init_models else ""
+            typer.echo(f"  • {model}{exog_marker}{special_marker}")
     
     typer.echo(f"\n\n📝 Total: {sum(len(models) for models in models_by_category.values())} models available")
     typer.echo("🔗 = Supports exogenous variables")
+    typer.echo("⚠️  = Requires special initialization (excluded from default training)")
     typer.echo("\nUsage: train --models \"NBEATS,NHITS,LSTM\"")
     typer.echo(f"\nDefault models (if --models not specified): {len(default_models)} models (ALL support exogenous variables 🔗)")
     typer.echo("  MLP-based: NHITS, NBEATSx, MLP, MLPMultivariate")
@@ -73,10 +68,10 @@ def list_models() -> None:
     typer.echo("  Specialized: TFT, DeepNPTS, TiDE")
     typer.echo("  Recent: TimeXer, TSMixerx")
     typer.echo("  KAN: KAN")
-    typer.echo("\nExcluded models (require special handling or don't support exogenous):")
-    typer.echo("  - HINT: Hierarchical model with different initialization")
-    typer.echo("  - DeepAR: Does not support hist_exog_list despite having the parameter")
-    typer.echo("  - TimesNet: Does not support hist_exog_list despite having the parameter")
+    typer.echo("\nExcluded models (require special handling or don't support hist_exog):")
+    typer.echo("  - HINT: Hierarchical model with different initialization (requires S matrix, model, reconciliation)")
+    typer.echo("  - DeepAR: Does NOT support hist_exog_list despite having the parameter (raises exception)")
+    typer.echo("  - TimesNet: Does NOT support hist_exog_list despite having the parameter (raises exception)")
     # Count total available models
     from glucose_neuralforecast.models import get_available_models
     available_models_dict = get_available_models(horizon=12, input_size=48, max_steps=5000)
@@ -330,6 +325,15 @@ def train(
         
         # Get models that support exogenous variables
         exogenous_capable_models = get_models_supporting_exogenous()
+        models_with_special_init = get_models_with_special_init()
+        
+        # Filter out models with special initialization requirements
+        model_names_list = [name for name in model_names_list if name not in models_with_special_init]
+        
+        if len(model_names_list) == 0:
+            typer.echo("❌ No valid models to train after filtering special initialization models")
+            typer.echo(f"   Models with special initialization: {models_with_special_init}")
+            return
         
         # Create model configurations (some models will be trained twice: univariate and with exogenous)
         model_configs = []
@@ -445,6 +449,12 @@ def train(
                     action.log(message_type="initializing_model", hist_exog_list=hist_exog_list)
                     model_constructor = available_models_dict[model_name]
                     
+                    # Get model configuration
+                    try:
+                        model_cfg = get_model_config(model_name)
+                    except KeyError:
+                        raise ValueError(f"Model configuration not found for {model_name}")
+                    
                     # Get model instance - models are created by lambdas in get_available_models()
                     # We need to create the model with hist_exog_list if using exogenous variables
                     from neuralforecast.models import (
@@ -478,11 +488,8 @@ def train(
                     if model_class is None:
                         raise ValueError(f"Model class not found for {model_name}")
                     
-                    # Check if model requires n_series parameter
-                    models_needing_n_series = get_models_requiring_n_series()
-                    
-                    # Create model with appropriate parameters
-                    if model_name in models_needing_n_series:
+                    # Create model with appropriate parameters based on configuration
+                    if model_cfg.requires_n_series:
                         # Multivariate models need n_series parameter
                         n_series = df['unique_id'].n_unique() if hasattr(df, 'n_unique') else df['unique_id'].nunique()
                         action.log(message_type="multivariate_model", n_series=n_series)

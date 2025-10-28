@@ -19,52 +19,41 @@ from neuralforecast.models import (
     KAN, RMoK
 )
 
+from glucose_neuralforecast.model_config import (
+    get_models_supporting_hist_exog,
+    get_models_requiring_n_series as get_models_requiring_n_series_from_config,
+    get_models_with_special_init
+)
+
 
 def get_models_supporting_exogenous() -> Set[str]:
     """
-    Get the set of model names that support exogenous variables (marked with F, F/H/S, or F/S in docs).
+    Get the set of model names that support exogenous variables (hist_exog_list).
 
-    Based on training tests, these models actually support historical exogenous variables:
-    - Models that work: NHITS, NBEATSx, MLP, LSTM, GRU, RNN, DilatedRNN, TCN, BiTCN
-    - Models that fail: VanillaTransformer, Informer, Autoformer, FEDformer
-    - Models with issues: 
-      - HINT: Hierarchical model with different initialization (requires S matrix, model, reconciliation)
-      - DeepAR: Has hist_exog_list parameter but raises exception when used
-      - TimesNet: Has hist_exog_list parameter but raises exception when used
-    - Multivariate models (require n_series parameter): MLPMultivariate, TimeXer, TSMixerx
+    This uses the model_config module which maintains accurate metadata about
+    each model's capabilities based on the NeuralForecast source code.
+
+    Notable exclusions:
+    - HINT: Hierarchical model with different initialization (requires S matrix, model, reconciliation)
+    - DeepAR: Does NOT support hist_exog_list despite having the parameter (raises exception)
+    - TimesNet: Does NOT support hist_exog_list despite having the parameter (raises exception)
+    
+    Multivariate models (require n_series parameter): MLPMultivariate, TimeXer, TSMixerx
 
     Returns:
-        Set[str]: Set of model names that support exogenous variables
+        Set[str]: Set of model names that support historical exogenous variables
     """
-    return {
-        # MLP-based models that support exogenous
-        'NBEATSx',
-        'NHITS',
-        'MLP',
-        'MLPMultivariate',  # Requires n_series parameter
+    return get_models_supporting_hist_exog()
 
-        # RNN-based models that support exogenous
-        'LSTM',
-        'GRU',
-        'RNN',
-        'DilatedRNN',
 
-        # CNN-based models that support exogenous
-        'TCN',
-        'BiTCN',
-
-        # Specialized models that support exogenous
-        'TFT',
-        'DeepNPTS',
-        'TiDE',
-
-        # Recent architectures that support exogenous
-        'TimeXer',  # Requires n_series parameter
-        'TSMixerx',  # Requires n_series parameter
-
-        # KAN models that support exogenous
-        'KAN'
-    }
+def get_models_requiring_n_series() -> Set[str]:
+    """
+    Get the set of model names that require n_series parameter (multivariate models).
+    
+    Returns:
+        Set of model names that need n_series
+    """
+    return get_models_requiring_n_series_from_config()
 
 
 def get_available_models(horizon: int, input_size: int, max_steps: int) -> dict:

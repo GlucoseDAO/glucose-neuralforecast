@@ -9,6 +9,8 @@ authors = [
 requires-python = ">=3.13"
 dependencies = [
     "eliot>=1.17.5",
+    "fastexcel>=0.16.0",
+    "fsspec>=2025.9.0",
     "kaleido>=0.2.1",
     "matplotlib>=3.10.7",
     "neuralforecast>=3.1.2",
@@ -17,6 +19,7 @@ dependencies = [
     "pycomfort>=0.0.18",
     "pydantic>=2.0.0",
     "pyyaml>=6.0.0",
+    "requests>=2.31.0",
     "scipy>=1.16.2",
     "seaborn>=0.13.2",
     "typer>=0.20.0",
@@ -31,6 +34,7 @@ list-models = "glucose_neuralforecast.train:app"
 list-trained = "glucose_neuralforecast.inference:app"
 generate-config = "glucose_neuralforecast.train:app"
 train-from-config = "glucose_neuralforecast.train:app"
+glucoseml = "glucose_neuralforecast.glucoseml.cli:app"
 
 [build-system]
 requires = ["uv_build>=0.9.2,<0.10.0"]

@@ -2,6 +2,10 @@
 
 Repository to experiment with the NeuralForecast library for predicting glucose levels.
 
+## What's New
+
+🎉 **GlucoseML Dataset Integration**: Automated pipeline to download, preprocess, and integrate 5 open-access glucose monitoring datasets (BIG IDEAS, Shanghai T1DM/T2DM, UCHTT1DM, CGMacros) from the [GlucoseML repository](https://github.com/Diabetes-Datasets/GlucoseML_Diabetes_Datasets_NeurIPS2025-F5FC). See [docs/GLUCOSEML_USAGE.md](docs/GLUCOSEML_USAGE.md) for details.
+
 ## Features
 
 ### Training
@@ -46,6 +50,28 @@ Repository to experiment with the NeuralForecast library for predicting glucose 
 ```bash
 uv sync
 ```
+
+## Quick Start: GlucoseML Datasets
+
+Train on open-access datasets with a single command:
+
+```bash
+# Download and preprocess all 5 datasets to parquet
+uv run glucoseml pipeline --datasets all
+
+# Train on the integrated data
+uv run train --data-file data/input/glucoseml/BIG_IDEAS.parquet --max-steps 2000
+```
+
+For detailed documentation, see [docs/GLUCOSEML_USAGE.md](docs/GLUCOSEML_USAGE.md)
+
+**Available datasets:**
+- BIG IDEAs (PhysioNet): 16 subjects, Dexcom, 5-min sampling
+- ShanghaiT1DM/T2DM (Figshare): Type 1/2 diabetes, FreeStyle Libre, 15-min sampling  
+- UCHTT1DM (GitHub): Type 1 diabetes, mixed sensors, 5-min sampling
+- CGMacros (PhysioNet): Dexcom/Libre with macronutrients, 5/15-min sampling
+
+All datasets include exogenous covariates (insulin, carbs, heart rate, etc.) where available.
 
 ## Usage
 
@@ -109,13 +135,13 @@ uv run list-models
 Generate a default configuration file:
 
 ```bash
-generate-config --output train_config.yaml
+uv run generate-config --output train_config.yaml
 ```
 
 Edit the generated `train_config.yaml` file to customize training parameters, then train:
 
 ```bash
-train-from-config --config train_config.yaml
+uv run train-from-config --config train_config.yaml
 ```
 
 Example `train_config.yaml`:
@@ -211,7 +237,7 @@ Each training run is saved in `data/output/runs/<run_id>/` with its own config.y
 Train specific models:
 
 ```bash
-train --models "NBEATS,NHITS,LSTM,GRU,MLP"
+uv run train --models "NBEATS,NHITS,LSTM,GRU,MLP"
 ```
 
 ### Available Models
@@ -398,7 +424,7 @@ After training models, you can use them for prediction and comparison.
 See which models have been trained:
 
 ```bash
-list-trained
+uv run list-trained
 ```
 
 ### Run Predictions

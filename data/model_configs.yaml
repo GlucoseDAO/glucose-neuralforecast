@@ -1,0 +1,273 @@
+Autoformer:
+  custom_params: {}
+  notes: Autoformer with full exogenous support
+  requires_n_series: false
+  special_init: false
+  supports_futr_exog: true
+  supports_hist_exog: true
+  supports_stat_exog: true
+BiTCN:
+  custom_params: {}
+  notes: Bidirectional TCN with full exogenous support
+  requires_n_series: false
+  special_init: false
+  supports_futr_exog: true
+  supports_hist_exog: true
+  supports_stat_exog: true
+DLinear:
+  custom_params: {}
+  notes: DLinear with full exogenous support
+  requires_n_series: false
+  special_init: false
+  supports_futr_exog: true
+  supports_hist_exog: true
+  supports_stat_exog: true
+DeepAR:
+  custom_params: {}
+  notes: DeepAR does NOT support hist_exog_list (raises exception in __init__)
+  requires_n_series: false
+  special_init: false
+  supports_futr_exog: true
+  supports_hist_exog: false
+  supports_stat_exog: true
+DeepNPTS:
+  custom_params: {}
+  notes: Deep Non-Parametric Time Series with full exogenous support
+  requires_n_series: false
+  special_init: false
+  supports_futr_exog: true
+  supports_hist_exog: true
+  supports_stat_exog: true
+DilatedRNN:
+  custom_params: {}
+  notes: Dilated RNN with full exogenous support
+  requires_n_series: false
+  special_init: false
+  supports_futr_exog: true
+  supports_hist_exog: true
+  supports_stat_exog: true
+FEDformer:
+  custom_params: {}
+  notes: FEDformer with full exogenous support
+  requires_n_series: false
+  special_init: false
+  supports_futr_exog: true
+  supports_hist_exog: true
+  supports_stat_exog: true
+GRU:
+  custom_params: {}
+  notes: GRU with full exogenous support
+  requires_n_series: false
+  special_init: false
+  supports_futr_exog: true
+  supports_hist_exog: true
+  supports_stat_exog: true
+HINT:
+  custom_params: {}
+  notes: HINT requires special initialization with S matrix, base model, and reconciliation
+    strategy
+  requires_n_series: false
+  special_init: true
+  supports_futr_exog: false
+  supports_hist_exog: false
+  supports_stat_exog: false
+Informer:
+  custom_params: {}
+  notes: Informer with full exogenous support
+  requires_n_series: false
+  special_init: false
+  supports_futr_exog: true
+  supports_hist_exog: true
+  supports_stat_exog: true
+KAN:
+  custom_params: {}
+  notes: Kolmogorov-Arnold Networks with full exogenous support
+  requires_n_series: false
+  special_init: false
+  supports_futr_exog: true
+  supports_hist_exog: true
+  supports_stat_exog: true
+LSTM:
+  custom_params: {}
+  notes: LSTM with full exogenous support
+  requires_n_series: false
+  special_init: false
+  supports_futr_exog: true
+  supports_hist_exog: true
+  supports_stat_exog: true
+MLP:
+  custom_params: {}
+  notes: Standard MLP model with full exogenous support
+  requires_n_series: false
+  special_init: false
+  supports_futr_exog: true
+  supports_hist_exog: true
+  supports_stat_exog: true
+MLPMultivariate:
+  custom_params: {}
+  notes: Multivariate MLP requires n_series parameter
+  requires_n_series: true
+  special_init: false
+  supports_futr_exog: true
+  supports_hist_exog: true
+  supports_stat_exog: true
+NBEATS:
+  custom_params: {}
+  notes: Original NBEATS without exogenous support
+  requires_n_series: false
+  special_init: false
+  supports_futr_exog: false
+  supports_hist_exog: false
+  supports_stat_exog: false
+NBEATSx:
+  custom_params: {}
+  notes: NBEATS extended with exogenous variables
+  requires_n_series: false
+  special_init: false
+  supports_futr_exog: true
+  supports_hist_exog: true
+  supports_stat_exog: true
+NHITS:
+  custom_params: {}
+  notes: NHITS with full exogenous support
+  requires_n_series: false
+  special_init: false
+  supports_futr_exog: true
+  supports_hist_exog: true
+  supports_stat_exog: true
+NLinear:
+  custom_params: {}
+  notes: NLinear with full exogenous support
+  requires_n_series: false
+  special_init: false
+  supports_futr_exog: true
+  supports_hist_exog: true
+  supports_stat_exog: true
+PatchTST:
+  custom_params: {}
+  notes: PatchTST without exogenous support
+  requires_n_series: false
+  special_init: false
+  supports_futr_exog: false
+  supports_hist_exog: false
+  supports_stat_exog: false
+RMoK:
+  custom_params: {}
+  notes: RMoK without exogenous support
+  requires_n_series: false
+  special_init: false
+  supports_futr_exog: false
+  supports_hist_exog: false
+  supports_stat_exog: false
+RNN:
+  custom_params: {}
+  notes: RNN with full exogenous support
+  requires_n_series: false
+  special_init: false
+  supports_futr_exog: true
+  supports_hist_exog: true
+  supports_stat_exog: true
+SOFTS:
+  custom_params: {}
+  notes: SOFTS without exogenous support
+  requires_n_series: false
+  special_init: false
+  supports_futr_exog: false
+  supports_hist_exog: false
+  supports_stat_exog: false
+StemGNN:
+  custom_params: {}
+  notes: StemGNN without exogenous support
+  requires_n_series: false
+  special_init: false
+  supports_futr_exog: false
+  supports_hist_exog: false
+  supports_stat_exog: false
+TCN:
+  custom_params: {}
+  notes: Temporal Convolutional Network with full exogenous support
+  requires_n_series: false
+  special_init: false
+  supports_futr_exog: true
+  supports_hist_exog: true
+  supports_stat_exog: true
+TFT:
+  custom_params: {}
+  notes: Temporal Fusion Transformer with full exogenous support
+  requires_n_series: false
+  special_init: false
+  supports_futr_exog: true
+  supports_hist_exog: true
+  supports_stat_exog: true
+TSMixer:
+  custom_params: {}
+  notes: TSMixer without exogenous support
+  requires_n_series: true
+  special_init: false
+  supports_futr_exog: false
+  supports_hist_exog: false
+  supports_stat_exog: false
+TSMixerx:
+  custom_params: {}
+  notes: TSMixerx multivariate model requires n_series parameter
+  requires_n_series: true
+  special_init: false
+  supports_futr_exog: true
+  supports_hist_exog: true
+  supports_stat_exog: true
+TiDE:
+  custom_params: {}
+  notes: TiDE with full exogenous support
+  requires_n_series: false
+  special_init: false
+  supports_futr_exog: true
+  supports_hist_exog: true
+  supports_stat_exog: true
+TimeLLM:
+  custom_params: {}
+  notes: TimeLLM without exogenous support
+  requires_n_series: false
+  special_init: false
+  supports_futr_exog: false
+  supports_hist_exog: false
+  supports_stat_exog: false
+TimeMixer:
+  custom_params: {}
+  notes: TimeMixer without exogenous support
+  requires_n_series: false
+  special_init: false
+  supports_futr_exog: false
+  supports_hist_exog: false
+  supports_stat_exog: false
+TimeXer:
+  custom_params: {}
+  notes: TimeXer multivariate model requires n_series parameter
+  requires_n_series: true
+  special_init: false
+  supports_futr_exog: true
+  supports_hist_exog: true
+  supports_stat_exog: true
+TimesNet:
+  custom_params: {}
+  notes: TimesNet does NOT support hist_exog_list (raises exception in __init__)
+  requires_n_series: false
+  special_init: false
+  supports_futr_exog: true
+  supports_hist_exog: false
+  supports_stat_exog: true
+VanillaTransformer:
+  custom_params: {}
+  notes: Vanilla Transformer with full exogenous support
+  requires_n_series: false
+  special_init: false
+  supports_futr_exog: true
+  supports_hist_exog: true
+  supports_stat_exog: true
+iTransformer:
+  custom_params: {}
+  notes: iTransformer without exogenous support
+  requires_n_series: false
+  special_init: false
+  supports_futr_exog: false
+  supports_hist_exog: false
+  supports_stat_exog: false
