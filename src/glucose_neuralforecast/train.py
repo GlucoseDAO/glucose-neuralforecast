@@ -32,11 +32,12 @@ from glucose_neuralforecast.config import (
     generate_run_id,
     list_training_runs
 )
+from glucose_neuralforecast.inference import load_trained_model
 
 app = typer.Typer()
 
 
-@app.command()
+@app.command(name="list-models")
 def list_models() -> None:
     """
     List all available models that can be trained.
@@ -79,7 +80,7 @@ def list_models() -> None:
     typer.echo("  (Note: Some models don't support exogenous variables and will only be trained without them)\n")
 
 
-@app.command()
+@app.command(name="generate-config")
 def generate_config(
     output_file: str = typer.Option(
         "train_config.yaml",
@@ -103,7 +104,7 @@ def generate_config(
     typer.echo(f"✅ Default configuration saved to: {output_file}")
 
 
-@app.command()
+@app.command(name="list-runs")
 def list_runs(
     output_dir: Optional[str] = typer.Option(
         None,
@@ -149,7 +150,7 @@ def list_runs(
     typer.echo(f"   Example: predict --run-id {runs[0]['run_id']}\n")
 
 
-@app.command()
+@app.command(name="train-from-config")
 def train_from_config(
     config_file: str = typer.Option(
         "train_config.yaml",
@@ -197,13 +198,34 @@ def train_from_config(
     )
 
 
-@app.command()
+@app.callback(invoke_without_command=True)
 def train(
+    ctx: typer.Context,
     data_file: Optional[str] = typer.Option(
         None,
         "--data-file",
         "-d",
         help="Path to the glucose CSV file. If not provided, uses data/input/livia_glucose.csv"
+    ),
+    glucoseml: bool = typer.Option(
+        False,
+        "--glucoseml/--no-glucoseml",
+        help="Load data from GlucoseML parquet files. If True, data_file should point to the processed directory or specific parquet file(s)."
+    ),
+    datasets: Optional[str] = typer.Option(
+        None,
+        "--datasets",
+        help="Comma-separated list of datasets to load (e.g., 'BIG_IDEAS,ShanghaiT1DM'). Only used with --glucoseml."
+    ),
+    max_gap_minutes: int = typer.Option(
+        60,
+        "--max-gap-minutes",
+        help="Maximum time gap in minutes for splitting time series into episodes (only for GlucoseML data)"
+    ),
+    min_episode_length: int = typer.Option(
+        48,
+        "--min-episode-length",
+        help="Minimum number of points required for an episode to be kept (only for GlucoseML data)"
     ),
     output_dir: Optional[str] = typer.Option(
         None,
@@ -263,6 +285,24 @@ def train(
         True,
         "--plotly/--no-plotly",
         help="Use plotly for interactive plots (default: True). Use --no-plotly for matplotlib."
+    ),
+    init_model_path: Optional[str] = typer.Option(
+        None,
+        "--init-model-path",
+        "--init-model",
+        help=(
+            "Path to a pretrained model directory (NeuralForecast save folder) to warm-start training. "
+            "Applied only to univariate runs (no exogenous) to avoid covariate mismatch."
+        )
+    ),
+    init_run_id: Optional[str] = typer.Option(
+        None,
+        "--init-run-id",
+        "--init-run",
+        help=(
+            "Training run ID to source a pretrained model from data/output/runs/<run-id>/models/<model_name>. "
+            "Used only for univariate runs. Ignored if --init-model-path is provided."
+        )
     )
 ) -> None:
     """
@@ -271,6 +311,10 @@ def train(
     Only models that support exogenous variables are trained with exogenous variables.
     Models without exogenous support are trained without them.
     """
+    # If a subcommand was invoked, don't run the training logic
+    if ctx.invoked_subcommand is not None:
+        return
+    
     with start_action(action_type="train_neuralforecast") as main_action:
         # Resolve base folder
         base = resolve_base_folder()
@@ -285,7 +329,27 @@ def train(
         
         # Set up paths
         data_dir = base / 'data'
-        input_path = Path(data_file) if data_file else data_dir / 'input' / 'livia_glucose.csv'
+        
+        # Determine input path based on data source
+        if glucoseml:
+            # GlucoseML parquet data
+            if data_file:
+                input_path = Path(data_file)
+            else:
+                input_path = data_dir / 'input' / 'glucoseml' / 'processed'
+            
+            # Parse dataset names if provided
+            dataset_list = None
+            if datasets:
+                dataset_list = [name.strip() for name in datasets.split(',')]
+                typer.echo(f"📊 Loading GlucoseML datasets: {dataset_list}")
+            else:
+                typer.echo(f"📊 Loading all GlucoseML datasets from: {input_path}")
+        else:
+            # CSV data (original Livia format)
+            input_path = Path(data_file) if data_file else data_dir / 'input' / 'livia_glucose.csv'
+            dataset_list = None
+        
         base_output_path = Path(output_dir) if output_dir else data_dir / 'output'
         
         # Create run directory structure
@@ -419,12 +483,36 @@ def train(
             try:
                 with start_action(action_type=f"train_model", model=display_name, base_model=model_name, use_exogenous=use_exogenous, step=step) as action:
                     # Load data with or without exogenous variables
-                    main_action.log(message_type="loading_data", path=str(input_path), use_exogenous=use_exogenous)
+                    main_action.log(message_type="loading_data", path=str(input_path), use_exogenous=use_exogenous, glucoseml=glucoseml)
                     typer.echo(f"  📊 Loading data (exogenous: {use_exogenous})...")
-                    df = load_glucose_data(input_path, include_exogenous=use_exogenous)
+                    
+                    # Import the appropriate loading function
+                    if glucoseml:
+                        from glucose_neuralforecast.data import load_glucoseml_data
+                        df = load_glucoseml_data(
+                            input_path,
+                            datasets=dataset_list,
+                            max_gap_minutes=max_gap_minutes,
+                            min_episode_length=min_episode_length,
+                            include_exogenous=use_exogenous
+                        )
+                    else:
+                        df = load_glucose_data(input_path, include_exogenous=use_exogenous)
                     
                     # Define exogenous column names
-                    hist_exog_list = get_exogenous_columns() if use_exogenous else None
+                    if use_exogenous:
+                        # For GlucoseML data, we use different exogenous column names
+                        if glucoseml:
+                            # Check which exogenous columns are actually present
+                            hist_exog_list = []
+                            for col in ['carbs', 'insulin', 'glucose_rate']:
+                                if col in df.columns:
+                                    hist_exog_list.append(col)
+                        else:
+                            # For Livia data, use the standard exogenous columns
+                            hist_exog_list = get_exogenous_columns()
+                    else:
+                        hist_exog_list = None
                     
                     action.log(
                         message_type="data_loaded",
@@ -489,7 +577,62 @@ def train(
                         raise ValueError(f"Model class not found for {model_name}")
                     
                     # Create model with appropriate parameters based on configuration
-                    if model_cfg.requires_n_series:
+                    # Optionally warm-start from a pretrained model for univariate case
+                    warm_started = False
+
+                    if (not use_exogenous) and (init_model_path or init_run_id):
+                        try:
+                            candidate_dirs: List[Path] = []
+
+                            # If explicit path is provided, consider it first
+                            if init_model_path:
+                                pretrained_dir = Path(init_model_path)
+                                if (pretrained_dir / 'configuration.pkl').exists():
+                                    candidate_dirs.append(pretrained_dir)
+                                if (pretrained_dir / 'models' / model_name / 'configuration.pkl').exists():
+                                    candidate_dirs.append(pretrained_dir / 'models' / model_name)
+
+                            # If run-id is provided (and path either absent or not valid), resolve under base_output_path
+                            if init_run_id:
+                                run_dir = base_output_path / 'runs' / init_run_id
+                                model_dir = run_dir / 'models' / model_name
+                                if (model_dir / 'configuration.pkl').exists():
+                                    candidate_dirs.append(model_dir)
+
+                            selected_dir: Optional[Path] = candidate_dirs[0] if candidate_dirs else None
+
+                            if selected_dir is not None:
+                                typer.echo(f"  ♻️ Warm-starting {model_name} from: {selected_dir}")
+                                loaded_nf = load_trained_model(selected_dir)
+                                # Expect exactly one model in the loaded NF container
+                                if hasattr(loaded_nf, 'models') and len(loaded_nf.models) == 1:
+                                    loaded_model = loaded_nf.models[0]
+                                    loaded_class_name = loaded_model.__class__.__name__
+
+                                    # Validate model class
+                                    if loaded_class_name != model_name:
+                                        typer.echo(f"  ⚠️  Pretrained model class '{loaded_class_name}' != requested '{model_name}', skipping warm start")
+                                    else:
+                                        # Validate horizon and input_size if present
+                                        loaded_h = getattr(loaded_model, 'h', None)
+                                        loaded_input = getattr(loaded_model, 'input_size', None)
+                                        if (loaded_h is not None and loaded_h != horizon) or (loaded_input is not None and loaded_input != input_size):
+                                            typer.echo(
+                                                f"  ⚠️  Pretrained hyperparameters differ (h={loaded_h}, input_size={loaded_input}) vs "
+                                                f"requested (h={horizon}, input_size={input_size}); skipping warm start"
+                                            )
+                                        else:
+                                            model = loaded_model
+                                            warm_started = True
+                                            action.log(message_type="warm_start_enabled", path=str(selected_dir))
+                                else:
+                                    typer.echo("  ⚠️  Pretrained container does not contain exactly one model; skipping warm start")
+                            else:
+                                typer.echo(f"  ⚠️  Could not locate pretrained model in '{init_model_path}'")
+                        except Exception as warm_e:
+                            typer.echo(f"  ⚠️  Warm start failed: {warm_e}")
+
+                    if not warm_started and model_cfg.requires_n_series:
                         # Multivariate models need n_series parameter
                         n_series = df['unique_id'].n_unique() if hasattr(df, 'n_unique') else df['unique_id'].nunique()
                         action.log(message_type="multivariate_model", n_series=n_series)
@@ -510,7 +653,7 @@ def train(
                                 n_series=n_series,
                                 max_steps=max_steps
                             )
-                    elif hist_exog_list:
+                    elif not warm_started and hist_exog_list:
                         # Standard models with exogenous variables
                         model = model_class(
                             input_size=input_size,
@@ -518,7 +661,7 @@ def train(
                             max_steps=max_steps,
                             hist_exog_list=hist_exog_list
                         )
-                    else:
+                    elif not warm_started:
                         # Standard models without exogenous variables
                         model = model_class(
                             input_size=input_size,
@@ -618,7 +761,14 @@ def train(
                     action.log(message_type="creating_plots", use_plotly=plotly)
                     
                     if plotly:
-                        plot_predictions_plotly(df, cv_df_pandas, display_name, output_path)
+                        # During training, cap ticks to keep Kaleido stable on large sequences
+                        plot_predictions_plotly(
+                            df,
+                            cv_df_pandas,
+                            display_name,
+                            output_path,
+                            max_ticks=200,
+                        )
                     else:
                         plot_predictions(df, cv_df_pandas, display_name, output_path)
                     
@@ -719,6 +869,36 @@ def train(
             
             summary_df.write_csv(metrics_summary_path)
             typer.echo(f"📊 Metrics summary saved to: {metrics_summary_path}")
+            
+            # Additionally, create a compact summary in the exact order requested:
+            # columns: model, rmse, mape, mse, mae (sorted by rmse ascending)
+            metrics_to_show_path = output_path / 'metrics_to_show.csv'
+            metrics_order = ['rmse', 'mape', 'mse', 'mae']
+            
+            rows_for_show = []
+            for model_col in model_cols:
+                row: dict[str, float | str | None] = {'model': model_col}
+                for metric_name in metrics_order:
+                    metric_data = combined_metrics.filter(pl.col('metric') == metric_name)
+                    if model_col in metric_data.columns:
+                        mean_val = metric_data[model_col].mean()
+                        row[metric_name] = float(mean_val) if mean_val is not None else None
+                    else:
+                        row[metric_name] = None
+                rows_for_show.append(row)
+            
+            metrics_to_show_df = pl.DataFrame(rows_for_show)
+            # Ensure correct column ordering and types
+            for col_name in ['rmse', 'mape', 'mse', 'mae']:
+                if col_name in metrics_to_show_df.columns:
+                    metrics_to_show_df = metrics_to_show_df.with_columns(pl.col(col_name).cast(pl.Float64))
+            if 'rmse' in metrics_to_show_df.columns:
+                metrics_to_show_df = metrics_to_show_df.sort('rmse')
+            # Reorder columns exactly as requested
+            present_cols = [c for c in ['model', 'rmse', 'mape', 'mse', 'mae'] if c in metrics_to_show_df.columns]
+            metrics_to_show_df = metrics_to_show_df.select(present_cols)
+            metrics_to_show_df.write_csv(metrics_to_show_path)
+            typer.echo(f"📊 Metrics (compact) saved to: {metrics_to_show_path}")
         
         # Save summary report
         summary_path = output_path / 'training_summary.txt'

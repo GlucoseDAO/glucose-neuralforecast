@@ -489,8 +489,9 @@ def plot_model_comparison(
             return True
 
 
-@app.command()
+@app.callback(invoke_without_command=True)
 def predict(
+    ctx: typer.Context,
     data_file: Optional[str] = typer.Option(
         None,
         "--data-file",
@@ -571,6 +572,10 @@ def predict(
     Generates comparison plots showing predictions from all selected models.
     Filters models by MAE threshold and shows only top N models by MAE.
     """
+    # If a subcommand was invoked, don't run the prediction logic
+    if ctx.invoked_subcommand is not None:
+        return
+    
     with start_action(action_type="inference_command") as main_action:
         # Set up eliot logging to stdout
         to_nice_stdout()
@@ -844,7 +849,7 @@ def predict(
         typer.echo(f"\n✨ Inference complete!")
 
 
-@app.command()
+@app.command(name="list-trained")
 def list_trained_models(
     output_dir: Optional[str] = typer.Option(
         None,

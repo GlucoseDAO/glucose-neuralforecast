@@ -4,6 +4,8 @@ Repository to experiment with the NeuralForecast library for predicting glucose 
 
 ## What's New
 
+🎉 **GlucoseML Training Support**: Train on multiple subjects with automatic episode segmentation! Load GlucoseML parquet datasets directly with `--glucoseml` flag. Handles discontinuous time series by automatically splitting into episodes. See [docs/GLUCOSEML_TRAINING.md](docs/GLUCOSEML_TRAINING.md) for details.
+
 🎉 **GlucoseML Dataset Integration**: Automated pipeline to download, preprocess, and integrate 5 open-access glucose monitoring datasets (BIG IDEAS, Shanghai T1DM/T2DM, UCHTT1DM, CGMacros) from the [GlucoseML repository](https://github.com/Diabetes-Datasets/GlucoseML_Diabetes_Datasets_NeurIPS2025-F5FC). See [docs/GLUCOSEML_USAGE.md](docs/GLUCOSEML_USAGE.md) for details.
 
 ## Features
@@ -82,17 +84,22 @@ All datasets include exogenous covariates (insulin, carbs, heart rate, etc.) whe
 uv run train
 ```
 
-2. **Run inference** (automatically uses latest training run):
+2. **Or train on GlucoseML datasets** (multiple subjects):
+```bash
+uv run train train --glucoseml
+```
+
+3. **Run inference** (automatically uses latest training run):
 ```bash
 uv run predict --cherry-pick
 ```
 
-3. **List all training runs**:
+4. **List all training runs**:
 ```bash
 uv run list-runs
 ```
 
-4. **Use specific training run** (optional):
+5. **Use specific training run** (optional):
 ```bash
 uv run predict --run-id run_20241021_130000 --cherry-pick
 ```
@@ -129,6 +136,92 @@ To see all available models (models with 🔗 support exogenous variables):
 ```bash
 uv run list-models
 ```
+
+### Training on GlucoseML Datasets
+
+Train on multiple subjects from GlucoseML parquet files with automatic episode segmentation:
+
+```bash
+# Train on all GlucoseML datasets
+uv run train train --glucoseml
+
+# Train on specific datasets
+uv run train train --glucoseml --datasets 'BIG_IDEAS,ShanghaiT1DM'
+
+# Custom episode parameters
+uv run train train --glucoseml --max-gap-minutes 90 --min-episode-length 72
+
+# With specific models
+uv run train train --glucoseml --models 'NHITS,LSTM,TFT' --max-steps 2000
+```
+
+**Key Features:**
+- ✅ **Auto episode detection**: Splits discontinuous data by time gaps  
+- ✅ **Multiple subjects**: Handles 100+ subjects from 5 datasets
+- ✅ **Configurable gaps**: Set max gap threshold (default: 60 min)
+- ✅ **Episode filtering**: Removes too-short episodes
+- ✅ **Schema alignment**: Aligns different dataset formats
+- ✅ **Exogenous support**: Includes carbs, insulin, glucose_rate
+
+**Parameters:**
+- `--glucoseml`: Enable GlucoseML data loading
+- `--datasets`: Comma-separated dataset names (optional)
+- `--max-gap-minutes`: Time gap threshold (default: 60)
+- `--min-episode-length`: Min points per episode (default: 48)
+
+📖 **Complete guide:** [docs/GLUCOSEML_TRAINING.md](docs/GLUCOSEML_TRAINING.md)
+
+### Fine-tuning (Warm Start)
+
+You can warm-start univariate training from a previously trained model (fine-tune). This is useful to pretrain on GlucoseML and then adapt to your Livia CSV data.
+
+- Warm start works only for univariate runs (no exogenous). Exogenous variants are intentionally not warm-started due to covariate mismatches across datasets.
+- The pretrained model’s `h` (horizon) and `input_size` must match the current run.
+- You can point to a prior run by ID or directly to a model directory.
+
+Step 1: Pretrain on GlucoseML (example with CGMacros)
+
+```bash
+# Optional: download and preprocess datasets
+uv run glucoseml pipeline --datasets CGMacros
+
+# Train on CGMacros with chosen models and hyperparameters
+uv run train --glucoseml --datasets CGMacros \
+  --models "NHITS,NBEATSx,TimeXer,MLP,DilatedRNN" \
+  --horizon 12 --input-size 48 --max-steps 2000
+
+# Note the printed run ID, e.g., run_20251027_192814
+```
+
+Step 2: Fine-tune on Livia CSV using that run as initialization
+
+```bash
+uv run train --data-file data/input/livia_glucose.csv \
+  --models "NHITS,NBEATSx,TimeXer,MLP,DilatedRNN" \
+  --horizon 12 --input-size 48 \
+  --init-run-id run_20251029_030738
+```
+
+Alternative: Provide a direct path instead of a run ID
+
+```bash
+# You can pass a run root (the tool resolves models/<model_name>)
+uv run train --data-file data/input/livia_glucose.csv \
+  --models "NHITS,NBEATSx,TimeXer,MLP,DilatedRNN" \
+  --horizon 12 --input-size 48 \
+  --init-model /home/antonkulaga/sources/glucose-neuralforecast/data/output/runs/run_20251029_025206
+
+# Or pass a specific model directory (for a single model)
+uv run train --data-file data/input/livia_glucose.csv \
+  --models "NHITS" \
+  --horizon 12 --input-size 48 \
+  --init-model /home/antonkulaga/sources/glucose-neuralforecast/data/output/runs/run_20251029_025206/models/NHITS
+```
+
+Behavior details
+- Per-model resolution: for each model in the current run, the trainer searches the specified run/model directory and warm-starts only if a compatible checkpoint is found. Otherwise that model trains from scratch.
+- Exogenous variants (e.g., `NHITS_exog`) are ignored for warm start by design; only base univariate models attempt warm start.
+- If model class or hyperparameters do not match, warm start is skipped automatically.
 
 ### Training with YAML Configuration (Recommended)
 

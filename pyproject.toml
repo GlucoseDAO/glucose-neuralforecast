@@ -1,7 +1,7 @@
 [project]
 name = "glucose-neuralforecast"
-version = "0.1.1"
-description = "Add your description here"
+version = "0.1.2"
+description = "Library to train and evaluate neural forecast models for glucose prediction"
 readme = "README.md"
 authors = [
     { name = "antonkulaga", email = "antonkulaga@gmail.com" }
@@ -30,10 +30,6 @@ dependencies = [
 train = "glucose_neuralforecast.train:app"
 predict = "glucose_neuralforecast.inference:app"
 summarize = "glucose_neuralforecast.summarize:app"
-list-models = "glucose_neuralforecast.train:app"
-list-trained = "glucose_neuralforecast.inference:app"
-generate-config = "glucose_neuralforecast.train:app"
-train-from-config = "glucose_neuralforecast.train:app"
 glucoseml = "glucose_neuralforecast.glucoseml.cli:app"
 
 [build-system]

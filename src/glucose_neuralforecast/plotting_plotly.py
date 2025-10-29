@@ -2,10 +2,25 @@
 
 from pathlib import Path
 from typing import Optional, List, Dict, Any, Literal
+import os
 
 import polars as pl
 import pandas as pd
 import plotly.graph_objects as go
+import plotly.io as pio
+# Configure Kaleido timeout (seconds): default larger, override via env var
+_DEFAULT_KALEIDO_TIMEOUT = 180.0
+_KALEIDO_TIMEOUT = os.getenv("PLOTLY_KALEIDO_TIMEOUT")
+try:
+    timeout_val = float(_KALEIDO_TIMEOUT) if _KALEIDO_TIMEOUT is not None else _DEFAULT_KALEIDO_TIMEOUT
+    if hasattr(pio, "kaleido") and hasattr(pio.kaleido, "scope"):
+        if hasattr(pio.kaleido.scope, "default_timeout"):
+            pio.kaleido.scope.default_timeout = timeout_val
+        elif hasattr(pio.kaleido.scope, "timeout"):
+            pio.kaleido.scope.timeout = timeout_val
+except Exception:
+    # Ignore misconfiguration; keep library defaults
+    pass
 from plotly.subplots import make_subplots
 from eliot import start_action
 
@@ -20,6 +35,7 @@ def plot_predictions_plotly(
     tickangle: int = -90,
     height: int = 600,
     width: int = 1400,
+    max_ticks: Optional[int] = None,
 ) -> None:
     """
     Plot prediction examples for a model using Plotly with enhanced interactivity.
@@ -65,6 +81,7 @@ def plot_predictions_plotly(
                     tickangle=tickangle,
                     height=height,
                     width=width,
+                    max_ticks=max_ticks,
                 )
                 
                 # Save as interactive HTML
@@ -74,8 +91,11 @@ def plot_predictions_plotly(
                 
                 # Also save as static PNG using kaleido
                 png_file = plots_dir / f'sequence_{seq_id}.png'
-                fig.write_image(str(png_file), width=width, height=height)
-                action.log(message_type="png_saved", sequence=seq_id, file=str(png_file))
+                try:
+                    fig.write_image(str(png_file), width=width, height=height)
+                    action.log(message_type="png_saved", sequence=seq_id, file=str(png_file))
+                except Exception as e:  # Kaleido may timeout or fail for large figures
+                    action.log(message_type="png_save_failed", sequence=seq_id, file=str(png_file), error=str(e))
 
 
 def create_timeseries_plot(
@@ -87,6 +107,7 @@ def create_timeseries_plot(
     tickangle: int = -90,
     height: int = 600,
     width: int = 1400,
+    max_ticks: Optional[int] = None,
 ) -> go.Figure:
     """
     Create an interactive plotly timeseries plot for a single sequence.
@@ -107,25 +128,31 @@ def create_timeseries_plot(
     fig = go.Figure()
     
     # Add actual values trace
+    actual_points = len(df_seq)
+    use_actual_markers = actual_points <= 2000
+    actual_mode = 'lines+markers' if use_actual_markers else 'lines'
     fig.add_trace(go.Scatter(
         x=df_seq['ds'],
         y=df_seq['y'],
-        mode='lines+markers',
+        mode=actual_mode,
         name='Actual',
         line=dict(color='#2E86AB', width=2),
-        marker=dict(size=4, symbol='circle'),
+        marker=dict(size=4, symbol='circle') if use_actual_markers else dict(size=0),
         hovertemplate='<b>Actual</b><br>Date: %{x}<br>Value: %{y:.2f}<extra></extra>',
     ))
     
     # Add predicted values trace
     if model_name in cv_seq.columns:
+        pred_points = len(cv_seq)
+        use_pred_markers = pred_points <= 2000
+        pred_mode = 'lines+markers' if use_pred_markers else 'lines'
         fig.add_trace(go.Scatter(
             x=cv_seq['ds'],
             y=cv_seq[model_name],
-            mode='lines+markers',
+            mode=pred_mode,
             name='Predicted',
             line=dict(color='#F24236', width=2, dash='dash'),
-            marker=dict(size=6, symbol='diamond'),
+            marker=dict(size=6, symbol='diamond') if use_pred_markers else dict(size=0),
             hovertemplate='<b>Predicted</b><br>Date: %{x}<br>Value: %{y:.2f}<extra></extra>',
         ))
     
@@ -137,11 +164,17 @@ def create_timeseries_plot(
     )
     
     if show_all_ticks:
-        # Show all time points
+        # Show time points; optionally cap if max_ticks is provided
+        all_ticks = df_seq['ds'].tolist()
+        if max_ticks is not None and len(all_ticks) > max_ticks:
+            step = max(1, len(all_ticks) // max_ticks)
+            sampled_tickvals = all_ticks[::step]
+        else:
+            sampled_tickvals = all_ticks
         xaxis_config.update(dict(
             tickmode='array',
-            tickvals=df_seq['ds'].tolist(),
-            ticktext=[str(d) for d in df_seq['ds'].tolist()],
+            tickvals=sampled_tickvals,
+            ticktext=[str(d) for d in sampled_tickvals],
             tickangle=tickangle,
             tickfont=dict(size=8),
         ))
@@ -244,7 +277,12 @@ def plot_comparison_plotly(
     
     # Save as static PNG  
     png_file = plots_dir / f'comparison_{sequence_id}.png'
-    fig.write_image(str(png_file), width=width, height=height)
+    try:
+        fig.write_image(str(png_file), width=width, height=height)
+    except Exception as e:
+        # Do not fail the pipeline if PNG export fails
+        from eliot import log_message
+        log_message(message_type="comparison_png_save_failed", sequence=sequence_id, file=str(png_file), error=str(e))
     
     # Verify files were actually created before returning success
     html_exists = (plots_dir / f'comparison_{sequence_id}.html').exists()
