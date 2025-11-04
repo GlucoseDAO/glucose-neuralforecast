@@ -49,9 +49,39 @@ Repository to experiment with the NeuralForecast library for predicting glucose 
 
 ## Installation
 
+### Linux/Mac
+
 ```bash
 uv sync
 ```
+
+### Windows
+
+```powershell
+uv sync
+```
+
+**Windows Users**: This project uses Ray (via neuralforecast) which has specific Windows considerations. See [docs/WINDOWS_SETUP.md](docs/WINDOWS_SETUP.md) for detailed Windows setup instructions, including:
+- Ray configuration for Windows
+- Environment variables setup
+- Common issues and solutions
+- WSL2 setup (recommended for best performance)
+
+**Quick Windows Setup (Python 3.12):**
+
+```powershell
+# If you encounter Ray issues, install Windows-specific wheel first
+pip install https://s3-us-west-2.amazonaws.com/ray-wheels/latest/ray-3.0.0.dev0-cp312-cp312-win_amd64.whl
+
+# Set Ray temporary directory to avoid long path issues
+$env:RAY_TMPDIR = "$HOME\ray_tmp"
+$env:RAY_ENABLE_WINDOWS_OR_OSX_CLUSTER = "1"
+
+# Install remaining dependencies
+uv sync
+```
+
+For more details, see the [Windows Setup Guide](docs/WINDOWS_SETUP.md).
 
 ## Quick Start: GlucoseML Datasets
 

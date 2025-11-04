@@ -1,0 +1,26 @@
+# Ray Configuration for glucose-neuralforecast
+# This configuration is automatically loaded when Ray starts
+
+# Windows-specific settings
+[ray]
+# Disable Ray dashboard on Windows to avoid potential issues
+include_dashboard = false
+
+# Set object store memory (in bytes) - adjust based on your system
+# Default is 30% of system memory, but can be configured explicitly
+# object_store_memory = 2000000000  # 2GB
+
+# Set number of CPUs Ray can use (leave commented to use all available)
+# num_cpus = 4
+
+# Disable automatic resource detection if needed
+# resources = {"CPU": 4, "GPU": 0}
+
+[logging]
+# Configure logging level
+log_to_driver = true
+
+[worker]
+# Worker configuration
+worker_timeout_seconds = 60
+

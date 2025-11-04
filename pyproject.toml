@@ -6,7 +6,7 @@ readme = "README.md"
 authors = [
     { name = "antonkulaga", email = "antonkulaga@gmail.com" }
 ]
-requires-python = ">=3.13"
+requires-python = ">=3.12"
 dependencies = [
     "eliot>=1.17.5",
     "fastexcel>=0.16.0",
@@ -39,4 +39,9 @@ build-backend = "uv_build"
 [dependency-groups]
 dev = [
     "jupyterlab>=4.4.9",
+]
+
+[tool.uv.sources]
+ray = [
+  { url = "https://s3-us-west-2.amazonaws.com/ray-wheels/latest/ray-3.0.0.dev0-cp312-cp312-win_amd64.whl", marker = "sys_platform == 'win32' and python_version == '3.12'" }
 ]
