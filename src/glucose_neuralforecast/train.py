@@ -54,15 +54,15 @@ def list_models() -> None:
     for category, models in models_by_category.items():
         typer.echo(f"\n{category}:")
         for model in models:
-            exog_marker = " [+]" if model in exog_models else ""
-            special_marker = " [!]" if model in special_init_models else ""
+            exog_marker = " [EX]" if model in exog_models else ""
+            special_marker = " [!!]" if model in special_init_models else ""
             typer.echo(f"  • {model}{exog_marker}{special_marker}")
     
-    typer.echo(f"\n\n[i] Total: {sum(len(models) for models in models_by_category.values())} models available")
-    typer.echo("[+] = Supports exogenous variables")
-    typer.echo("[!] = Requires special initialization (excluded from default training)")
+    typer.echo(f"\n\n[#] Total: {sum(len(models) for models in models_by_category.values())} models available")
+    typer.echo("[EX] = Supports exogenous variables")
+    typer.echo("[!!] = Requires special initialization (excluded from default training)")
     typer.echo("\nUsage: train --models \"NBEATS,NHITS,LSTM\"")
-    typer.echo(f"\nDefault models (if --models not specified): {len(default_models)} models (ALL support exogenous variables [+])")
+    typer.echo(f"\nDefault models (if --models not specified): {len(default_models)} models (ALL support exogenous variables [EX])")
     typer.echo("  MLP-based: NHITS, NBEATSx, MLP, MLPMultivariate")
     typer.echo("  RNN-based: LSTM, GRU, RNN, DilatedRNN")
     typer.echo("  CNN-based: TCN, BiTCN")
@@ -76,7 +76,7 @@ def list_models() -> None:
     # Count total available models
     from glucose_neuralforecast.models import get_available_models
     available_models_dict = get_available_models(horizon=12, input_size=48, max_steps=5000)
-    typer.echo(f"\n[i] Total available models: {len(available_models_dict)}")
+    typer.echo(f"\n[#] Total available models: {len(available_models_dict)}")
     typer.echo("  (Note: Some models don't support exogenous variables and will only be trained without them)\n")
 
 
@@ -97,7 +97,7 @@ def generate_config(
     if output_path.exists():
         overwrite = typer.confirm(f"File {output_file} already exists. Overwrite?")
         if not overwrite:
-            typer.echo("[X] Cancelled")
+            typer.echo("[-] Cancelled")
             return
     
     save_default_config(output_path)
@@ -123,7 +123,7 @@ def list_runs(
     runs = list_training_runs(output_path)
     
     if not runs:
-        typer.echo("[!] No training runs found")
+        typer.echo("[-] No training runs found")
         typer.echo(f"   Runs are stored in: {output_path / 'runs'}")
         return
     
@@ -146,7 +146,7 @@ def list_runs(
         
         typer.echo(f"{run_id:<25} {str(models_count):<8} {str(horizon):<8} {str(max_steps):<8} {status}")
     
-    typer.echo(f"\n[*] Use --run-id to specify a run for inference")
+    typer.echo(f"\n[i] Use --run-id to specify a run for inference")
     typer.echo(f"   Example: predict --run-id {runs[0]['run_id']}\n")
 
 
@@ -165,7 +165,7 @@ def train_from_config(
     config_path = Path(config_file)
     
     if not config_path.exists():
-        typer.echo(f"[X] Configuration file not found: {config_file}")
+        typer.echo(f"[!] Configuration file not found: {config_file}")
         typer.echo(f"Generate a default config with: generate-config")
         raise typer.Exit(1)
     
@@ -395,7 +395,7 @@ def train(
         model_names_list = [name for name in model_names_list if name not in models_with_special_init]
         
         if len(model_names_list) == 0:
-            typer.echo("[X] No valid models to train after filtering special initialization models")
+            typer.echo("[!] No valid models to train after filtering special initialization models")
             typer.echo(f"   Models with special initialization: {models_with_special_init}")
             return
         
@@ -472,7 +472,7 @@ def train(
             typer.echo(f"{'='*70}")
             
             if model_name not in available_models_dict:
-                typer.echo(f"[X] Model {model_name} not available. Skipping...")
+                typer.echo(f"[!] Model {model_name} not available. Skipping...")
                 failed_models.append({
                     'model': display_name,
                     'error': 'Model not available',
@@ -602,7 +602,7 @@ def train(
                             selected_dir: Optional[Path] = candidate_dirs[0] if candidate_dirs else None
 
                             if selected_dir is not None:
-                                typer.echo(f"  [~] Warm-starting {model_name} from: {selected_dir}")
+                                typer.echo(f"  [W] Warm-starting {model_name} from: {selected_dir}")
                                 loaded_nf = load_trained_model(selected_dir)
                                 # Expect exactly one model in the loaded NF container
                                 if hasattr(loaded_nf, 'models') and len(loaded_nf.models) == 1:
@@ -794,7 +794,7 @@ def train(
             except Exception as e:
                 error_msg = str(e)
                 error_trace = traceback.format_exc()
-                typer.echo(f"  [X] Error training {display_name}: {error_msg}")
+                typer.echo(f"  [!] Error training {display_name}: {error_msg}")
                 typer.echo(f"  Traceback:\n{error_trace}")
                 
                 failed_models.append({
@@ -809,7 +809,7 @@ def train(
                     f.write(f"Error training {display_name}:\n")
                     f.write(f"{error_trace}\n")
                 
-                typer.echo(f"  [!] Continuing with next model...")
+                typer.echo(f"  [~] Continuing with next model...")
                 continue
         
         # Final summary
@@ -819,7 +819,7 @@ def train(
         typer.echo(f"[+] Successful models ({len(successful_models)}): {', '.join(successful_models)}")
         
         if failed_models:
-            typer.echo(f"\n[X] Failed models ({len(failed_models)}):")
+            typer.echo(f"\n[!] Failed models ({len(failed_models)}):")
             for fail in failed_models:
                 typer.echo(f"  Step {fail['step']}: {fail['model']} - {fail['error']}")
         
@@ -838,7 +838,7 @@ def train(
                 )
             
             combined_metrics.write_csv(metrics_path)
-            typer.echo(f"\n[+] Final metrics saved to: {metrics_path}")
+            typer.echo(f"\n[i] Final metrics saved to: {metrics_path}")
             
             # Also save a summary with aggregated metrics per model
             # Format: models as rows, metrics as columns, sorted by MAE ascending
@@ -868,7 +868,7 @@ def train(
                 summary_df = summary_df.sort('MAE_mean')
             
             summary_df.write_csv(metrics_summary_path)
-            typer.echo(f"[+] Metrics summary saved to: {metrics_summary_path}")
+            typer.echo(f"[i] Metrics summary saved to: {metrics_summary_path}")
             
             # Additionally, create a compact summary in the exact order requested:
             # columns: model, rmse, mape, mse, mae (sorted by rmse ascending)
@@ -898,7 +898,7 @@ def train(
             present_cols = [c for c in ['model', 'rmse', 'mape', 'mse', 'mae'] if c in metrics_to_show_df.columns]
             metrics_to_show_df = metrics_to_show_df.select(present_cols)
             metrics_to_show_df.write_csv(metrics_to_show_path)
-            typer.echo(f"[+] Metrics (compact) saved to: {metrics_to_show_path}")
+            typer.echo(f"[i] Metrics (compact) saved to: {metrics_to_show_path}")
         
         # Save summary report
         summary_path = output_path / 'training_summary.txt'
@@ -914,8 +914,8 @@ def train(
                 for fail in failed_models:
                     f.write(f"  Step {fail['step']}: {fail['model']} - {fail['error']}\n")
         
-        typer.echo(f"[+] Summary saved to: {summary_path}")
-        typer.echo("\n[*] Training complete!")
+        typer.echo(f"[i] Summary saved to: {summary_path}")
+        typer.echo("\n[+] Training complete!")
 
 
 if __name__ == "__main__":
